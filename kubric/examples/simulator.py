@@ -1,6 +1,7 @@
 import logging
 import numpy as np
 import kubric as kb
+import bpy
 from kubric.renderer.blender import Blender as KubricBlender
 from kubric.simulator.pybullet import PyBullet as KubricSimulator
 from kubric.assets.asset_source import AssetSource
@@ -44,6 +45,7 @@ writer_map = {
 def generate_sequence(seq_id: int, output_root: Path = Path("output")):
 
     # --- Parameter settings ---
+    kubasic_manifest = "gs://kubric-public/assets/KuBasic/KuBasic.json"
     gso_manifest = "gs://kubric-public/assets/GSO/GSO.json"
     hdri_manifest = "gs://kubric-public/assets/HDRI_haven/HDRI_haven.json"
     resolution = (256, 256)
@@ -54,13 +56,14 @@ def generate_sequence(seq_id: int, output_root: Path = Path("output")):
     min_dynamic, max_dynamic = 1, 3
     spawn_region_static = [[-7, -7, 0], [7, 7, 10]]
     spawn_region_dynamic = [[-5, -5, 1], [5, 5, 5]]
+    VELOCITY_RANGE = [(-4., -4., 0.), (4., 4., 0.)]
     rng = np.random.default_rng()
 
     # --- Scene initialization ---
-    scene = kb.Scene(resolution=(256, 256))
-    scene.frame_end = 10
-    scene.frame_rate = 5
-    scene.step_rate = 240
+    scene = kb.Scene(resolution=resolution)
+    scene.frame_end = frame_end
+    scene.frame_rate = frame_rate
+    scene.step_rate = step_rate
 
     renderer = KubricBlender(scene)
     simulator = KubricSimulator(scene)
@@ -69,19 +72,34 @@ def generate_sequence(seq_id: int, output_root: Path = Path("output")):
     # --- Asset sources ---
     asset_source = kb.AssetSource.from_manifest(gso_manifest)
     hdri_source = kb.AssetSource.from_manifest(hdri_manifest)
+    kubasic_source = kb.AssetSource.from_manifest(kubasic_manifest)
     
     # --- Scene background HDRI ---
     hdri_id = rng.choice(list(hdri_source._assets.keys()))
+    print(f"🌅 Using HDRI: {hdri_id}")
     background_hdri = hdri_source.create(asset_id=hdri_id)
+    print(f"📸 Loading HDRI: {background_hdri.filename}")
     renderer._set_ambient_light_hdri(background_hdri.filename)
-   
+    #TODO: AGGIUNGERE BACKGROUND AI METADATA
+
+    # --- Dome ---
+    dome = kubasic_source.create(asset_id="dome",friction = 1.0, restitution = 0.0, static= True, background= True)
+    assert isinstance(dome, kb.FileBasedObject)
+    scene += dome
+    dome_blender = dome.linked_objects[renderer]
+    texture_node = dome_blender.data.materials[0].node_tree.nodes.get("Image Texture")
+    texture_node.image = bpy.data.images.load(background_hdri.filename)
+    
     # --- Static floor ---
     scene += kb.Cube(name="floor", scale=(3, 3, 0.1), position=(0, 0, -0.1), static=True)
 
     # --- Camera ---
     #scene += kb.DirectionalLight(name="sun", position=(-1, -0.5, 3), look_at=(0, 0, 0), intensity=1.5)
-    scene.camera = kb.PerspectiveCamera(name="camera", position=(2, -0.5, 4), look_at=(0, 0, 0))
-
+    scene.camera = kb.PerspectiveCamera(name="camera", focal_length=35., sensor_width=32)
+    scene.camera.position = kb.sample_point_in_half_sphere_shell(
+      inner_radius=7., outer_radius=9., offset=0.1)
+    scene.camera.look_at((0, 0, 0))
+    #TODO: AGGIUNGERE MOVIMENTO DI CAMERA
 
 
     # === STATIC OBJECTS ===
@@ -91,21 +109,29 @@ def generate_sequence(seq_id: int, output_root: Path = Path("output")):
     for _ in range(num_static):
         shape_id = rng.choice(shape_ids)
         obj = asset_source.create(
-            shape_id,
-            scale=rng.uniform(0.75, 3.0),
-            position=rng.uniform(spawn_region_static[0], spawn_region_static[1])
+            shape_id
+            #scale=rng.uniform(0.75, 3.0),
+            #position=rng.uniform(spawn_region_static[0], spawn_region_static[1])
         )
-        obj.static = True
-        obj.friction = 1.0
-        obj.restitution = 0.0
+        assert isinstance(obj, kb.FileBasedObject)
+        scale = rng.uniform(0.75, 3.0)
+        obj.scale = scale / np.max(obj.bounds[1]- obj.bounds[0])  # Normalize scale
         scene += obj
         kb.move_until_no_overlap(obj, simulator, spawn_region=spawn_region_static, rng=rng)
+        
+        obj.friction = 1.0
+        obj.restitution = 0.0
+    #TODO AGGIUNGERE STATICO F/T AI METADATA
 
     # --- Run static simulation ---
     simulator.run(frame_start=-100, frame_end=0)
     for obj in scene.foreground_assets:
-        obj.velocity = (0., 0., 0.)
-        obj.friction, obj.restitution = 0.5, 0.5
+        if hasattr(obj, "velocity"):
+            obj.velocity = (0., 0., 0.)
+            obj.friction, obj.restitution = 0.5, 0.5
+    
+    dome.friction = 0.3
+    dome.restitution = 0.5
 
     
     # === DYNAMIC OBJECTS ===
@@ -114,21 +140,14 @@ def generate_sequence(seq_id: int, output_root: Path = Path("output")):
     for _ in range(num_dynamic):
         shape_id = rng.choice(shape_ids)
         obj = asset_source.create(
-            shape_id,
-            scale=rng.uniform(0.75, 3.0),
-            position=rng.uniform(spawn_region_dynamic[0], spawn_region_dynamic[1])
-        )
-        obj.static = False
-        obj.mass = 1.0
-        obj.friction = 0.5
-        obj.restitution = 0.5
-        obj.linear_velocity = (
-            rng.uniform(-4, 4),
-            rng.uniform(-4, 4),
-            0
-        )
+            shape_id,)
+        assert isinstance(obj, kb.FileBasedObject)
+        scale = rng.uniform(0.75, 3.0)
+        obj.scale = scale / np.max(obj.bounds[1] - obj.bounds[0])
         scene += obj
         kb.move_until_no_overlap(obj, simulator, spawn_region=spawn_region_dynamic, rng=rng)
+        obj.velocity = (rng.uniform(*VELOCITY_RANGE) -
+                  [obj.position[0], obj.position[1], 0])
 
     # === Main simulation run ===
     simulator.run(frame_start=0, frame_end=scene.frame_end + 1)
@@ -188,10 +207,7 @@ def generate_sequence(seq_id: int, output_root: Path = Path("output")):
         else:
             logging.warning(f"⚠️ Nessuna funzione di salvataggio per '{key}' — ignorato.")
     
-
-
-
-
+    kb.done()
 
 def collect_frame_metadata(scene, frame_idx, movable_objects):
     """
@@ -226,12 +242,6 @@ def collect_frame_metadata(scene, frame_idx, movable_objects):
         frame_data["objects"].append(obj_data)
 
     return frame_data
-
-
-
-
-
-
 
 
 def main(num_sequences: int = 5):
