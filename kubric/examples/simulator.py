@@ -49,14 +49,16 @@ def generate_sequence(seq_id: int, output_root: Path = Path("output")):
     gso_manifest = "gs://kubric-public/assets/GSO/GSO.json"
     hdri_manifest = "gs://kubric-public/assets/HDRI_haven/HDRI_haven.json"
     resolution = (256, 256)
-    frame_end = 10
-    frame_rate = 5
+    frame_end = 24
+    frame_rate = 12
     step_rate = 240
     min_static, max_static = 2, 4
     min_dynamic, max_dynamic = 1, 3
     spawn_region_static = [[-7, -7, 0], [7, 7, 10]]
     spawn_region_dynamic = [[-5, -5, 1], [5, 5, 5]]
     VELOCITY_RANGE = [(-4., -4., 0.), (4., 4., 0.)]
+    camera_tipes = ["fixed_random", "linear_movement", "linear_movement_linear_lookat"]
+    max_camera_movement = 4.0
     rng = np.random.default_rng()
 
     # --- Scene initialization ---
@@ -65,7 +67,7 @@ def generate_sequence(seq_id: int, output_root: Path = Path("output")):
     scene.frame_rate = frame_rate
     scene.step_rate = step_rate
 
-    renderer = KubricBlender(scene)
+    renderer = KubricBlender(scene, use_denoising=True, samples_per_pixel=64)
     simulator = KubricSimulator(scene)
 
 
@@ -87,14 +89,10 @@ def generate_sequence(seq_id: int, output_root: Path = Path("output")):
     assert isinstance(dome, kb.FileBasedObject)
     scene += dome
     dome_blender = dome.linked_objects[renderer]
-    texture_node = dome_blender.data.materials[0].node_tree.nodes.get("Image Texture")
+    texture_node = dome_blender.data.materials[0].node_tree.nodes["Image Texture"]
     texture_node.image = bpy.data.images.load(background_hdri.filename)
     
-    # --- Static floor ---
-    scene += kb.Cube(name="floor", scale=(3, 3, 0.1), position=(0, 0, -0.1), static=True)
-
     # --- Camera ---
-    #scene += kb.DirectionalLight(name="sun", position=(-1, -0.5, 3), look_at=(0, 0, 0), intensity=1.5)
     scene.camera = kb.PerspectiveCamera(name="camera", focal_length=35., sensor_width=32)
     scene.camera.position = kb.sample_point_in_half_sphere_shell(
       inner_radius=7., outer_radius=9., offset=0.1)
@@ -110,9 +108,8 @@ def generate_sequence(seq_id: int, output_root: Path = Path("output")):
         shape_id = rng.choice(shape_ids)
         obj = asset_source.create(
             shape_id
-            #scale=rng.uniform(0.75, 3.0),
-            #position=rng.uniform(spawn_region_static[0], spawn_region_static[1])
         )
+        print(f"📦 Creating static object: {shape_id} at position :{obj.position}")
         assert isinstance(obj, kb.FileBasedObject)
         scale = rng.uniform(0.75, 3.0)
         obj.scale = scale / np.max(obj.bounds[1]- obj.bounds[0])  # Normalize scale
@@ -121,7 +118,8 @@ def generate_sequence(seq_id: int, output_root: Path = Path("output")):
         
         obj.friction = 1.0
         obj.restitution = 0.0
-    #TODO AGGIUNGERE STATICO F/T AI METADATA
+        #TODO AGGIUNGERE STATICO F/T AI METADATA
+        print(f"📦 Static objects added: {num_static} ({shape_id}) at position: {obj.position}")
 
     # --- Run static simulation ---
     simulator.run(frame_start=-100, frame_end=0)
@@ -140,7 +138,8 @@ def generate_sequence(seq_id: int, output_root: Path = Path("output")):
     for _ in range(num_dynamic):
         shape_id = rng.choice(shape_ids)
         obj = asset_source.create(
-            shape_id,)
+            shape_id)
+        print(f"🚀 Creating dynamic object: {shape_id} at position :{obj.position}")
         assert isinstance(obj, kb.FileBasedObject)
         scale = rng.uniform(0.75, 3.0)
         obj.scale = scale / np.max(obj.bounds[1] - obj.bounds[0])
@@ -148,9 +147,13 @@ def generate_sequence(seq_id: int, output_root: Path = Path("output")):
         kb.move_until_no_overlap(obj, simulator, spawn_region=spawn_region_dynamic, rng=rng)
         obj.velocity = (rng.uniform(*VELOCITY_RANGE) -
                   [obj.position[0], obj.position[1], 0])
+        #obj.mass = 1.0
+        #obj.static = False
+        print(f"🚀 Dynamic object {shape_id} velocity set to {obj.velocity} at position: {obj.position}")
+        #scene.gravity = (0, 0, -9.81)
 
     # === Main simulation run ===
-    simulator.run(frame_start=0, frame_end=scene.frame_end + 1)
+    animation,collisions = simulator.run(frame_start=0, frame_end=scene.frame_end + 1)
 
 
     # === Saving metadata frame by frame ===
