@@ -4,25 +4,32 @@ import shutil
 from rpg_vid2e.upsampling.utils import Upsampler
 from event_generator import EventGenerator
 
-def start_simulation():
+def start_simulation(simulation_type = "gso"):
     user_id = os.getuid()
     group_id = os.getgid()
     current_dir = os.getcwd()
 
-    cmd = [
-        "docker", "run", "--rm", "--interactive",
-        "--user", f"{user_id}:{group_id}",
-        "--volume", f"{current_dir}:/kubric",
-        "kubricdockerhub/kubruntu",
-        "/usr/bin/python3", "kubric/examples/simulator.py"
-    ]
+    if (simulation_type == "gso"):
+        cmd = [
+            "docker", "run", "--rm", "--interactive",
+            "--user", f"{user_id}:{group_id}",
+            "--volume", f"{current_dir}:/kubric",
+            "kubricdockerhub/kubruntu",
+        "/usr/bin/python3", "kubric/examples/simulator.py"]
+    elif (simulation_type == "shapenet"):
+        cmd = [
+            "docker", "run", "--rm", "--interactive",
+            "--user", f"{user_id}:{group_id}",
+            "--volume", f"{current_dir}:/kubric",
+            "kubricdockerhub/kubruntu",
+            "/usr/bin/python3", "generator_shapenet.py"
+        ]
 
     subprocess.run(cmd)
 
 def pipeline():
     # Start the Kubric simulation to generate initial RGB frames
-    start_simulation()
-    
+    start_simulation("shapenet")
     # Clean up any existing upsampled output directory
     output_dir = "output/upsampled_rgb"
     if os.path.exists(output_dir):

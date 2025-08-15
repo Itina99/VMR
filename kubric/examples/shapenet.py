@@ -35,7 +35,7 @@ renderer = Blender(scene, scratch_dir,
                    background_transparency=True)
 
 # --- Fetch shapenet
-source_path = os.getenv("SHAPENET_GCP_BUCKET", "gs://kubric-public/assets/ShapeNetCore.v2.json")
+source_path = os.getenv("SHAPENET_GCP_BUCKET", "gs://kubric-unlisted/assets/ShapeNetCore.v2.json")
 shapenet = kb.AssetSource.from_manifest(source_path)
 
 # --- Add Klevr-like lights to the scene
