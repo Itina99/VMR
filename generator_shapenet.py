@@ -22,11 +22,12 @@ from tqdm import tqdm
 from pathlib import Path
 import json
 from collections import defaultdict
+import random as Random
 
+# ============================================================
+# --- CONFIGURAZIONE GLOBALE ---
+# ============================================================
 
-
-
-# Setup logging
 logging.basicConfig(level="INFO")
 
 writer_map = {
@@ -42,29 +43,86 @@ writer_map = {
     "object_coordinates": write_coordinates_batch,
 }
 
-def generate_sequence(seq_id: int, output_root: Path = Path("output")):
-    shapenet_manifest = "gs://kubric-unlisted/assets/ShapeNetCore.v2.json"
-    kubasic_manifest = "gs://kubric-public/assets/KuBasic/KuBasic.json"
-    hdri_manifest = "gs://kubric-public/assets/HDRI_haven/HDRI_haven.json"
-    resolution = (256, 256)
-    frame_end = 24
-    frame_rate = 12
-    step_rate = 240
-    min_static, max_static = 1, 1
-    min_dynamic, max_dynamic = 1, 1
-    spawn_region_static = [[-3, -3, 0], [3, 3, 5]]
-    spawn_region_dynamic = [[-3, -3, 1], [3, 3, 5]]
-    VELOCITY_RANGE = [(-4., -4., 0.), (4., 4., 0.)]
-    camera_tipes = ["fixed_random", "linear_movement", "linear_movement_linear_lookat"]
-    max_camera_movement = 4.0
+# Parametri di base
+RESOLUTION = (256, 256)
+FRAME_END = 24
+FRAME_RATE = 12
+STEP_RATE = 240
+MIN_STATIC, MAX_STATIC = 0, 0
+MIN_DYNAMIC, MAX_DYNAMIC = 1, 1
+SPAWN_REGION_STATIC = [[-3, -3, 0], [3, 3, 5]]
+SPAWN_REGION_DYNAMIC = [[-3, -3, 1], [3, 3, 5]]
+VELOCITY_RANGE = [(-4., -4., 0.), (4., 4., 0.)]
+CAMERA_TYPES = ["fixed_random", "linear_movement", "linear_movement_linear_lookat"]
+MAX_CAMERA_MOVEMENT = 4.0
+
+# Percorsi ai manifest
+SHAPENET_MANIFEST = "gs://kubric-unlisted/assets/ShapeNetCore.v2.json"
+KUBASIC_MANIFEST = "gs://kubric-public/assets/KuBasic/KuBasic.json"
+HDRI_MANIFEST = "gs://kubric-public/assets/HDRI_haven/HDRI_haven.json"
+
+# ============================================================
+# --- CARICAMENTO RISORSE UNA VOLTA SOLA ---
+# ============================================================
+
+print("📂 Caricamento dataset...")
+source_path = os.getenv("SHAPENET_GCP_BUCKET", SHAPENET_MANIFEST)
+ASSET_SOURCE = kb.AssetSource.from_manifest(source_path)
+HDRI_SOURCE = kb.AssetSource.from_manifest(HDRI_MANIFEST)
+KUBASIC_SOURCE = kb.AssetSource.from_manifest(KUBASIC_MANIFEST)
 
 
+# settings
+classes = ["airplane", "ashcan", "bag", "basket", "bathtub", "bed", "bench", "birdhouse", "bookshelf", "bottle", "bowl", "bus", "cabinet", "camera", "can", "cap", "car", "cellular telephone", "chair", "clock", "computer keyboard", "dishwasher", "display", "earphone", "faucet", "file", "guitar", "helmet", "jar", "knife", "lamp", "laptop", "loudspeaker", "mailbox", "microphone", "microwave", "motorcycle", "mug", "piano", "pillow", "pistol", "pot", "printer", "remote control", "rifle", "rocket", "skateboard", "sofa", "stove", "table", "telephone", "tower", "train", "vessel", "washer"]
+shape_ids = sorted(ASSET_SOURCE._assets.keys())
+light_levels = [0.0, 0.25, 0.5, 0.75, 1.0]  # 0–100%
+
+light_orientations = {
+    "front": (0., 0., 0.),
+    "side_45": (0., 0., np.pi/4),
+    "side_90": (0., 0., np.pi/2),
+    "back_135": (0., 0., 3*np.pi/4),
+    "top": (np.pi/2, 0., 0.),
+    "bottom": (-np.pi/2, 0., 0.)
+}
+
+camera_positions = {
+    "front": (0, -8, 0),            # 0° frontale
+    "tilt_30": (4, -7, 3),          # 30° inclinata
+    "tilt_60": (7, -4, 5),          # 60° obliqua
+    "side_90": (8, 0, 0),           # 90° laterale puro
+    "retro_120": (7, 4, 3),         # 120° retro-inclinata
+    "back_180": (0, 8, 0),          # 180° dietro
+    "top": (0, 0, 8),               # zenitale
+    "bottom": (0, 0, -8),           # vista dal basso
+}
+light_colors = {
+    "white":   (1.0, 1.0, 1.0, 1.0),
+    "red":     (1.0, 0.0, 0.0, 1.0),
+    "green":   (0.0, 1.0, 0.0, 1.0),
+    "blue":    (0.0, 0.0, 1.0, 1.0),
+    "yellow":  (1.0, 1.0, 0.0, 1.0),
+    "purple":  (0.5, 0.0, 0.5, 1.0),
+    "cyan":    (0.0, 1.0, 1.0, 1.0),
+    "orange":  (1.0, 0.5, 0.0, 1.0),
+}
+
+
+print(f"✅ ShapeNet: {len(ASSET_SOURCE._assets)} modelli caricati")
+print(f"✅ HDRI: {len(HDRI_SOURCE._assets)} mappe caricate")
+print(f"✅ KuBasic asset disponibili")
+
+# ============================================================
+# --- FUNZIONE DI GENERAZIONE SEQUENZA ---
+# ============================================================
+
+def generate_sequence(seq_id: int, shape_id:str, light_intensity: float, orientation: tuple, camera_position: tuple, output_root: Path = Path("output")):
     parser = kb.ArgumentParser()
     parser.set_defaults(
-        resolution=resolution,
-        frame_end=frame_end,
-        frame_rate=frame_rate,
-        step_rate=step_rate,
+        resolution=RESOLUTION,
+        frame_end=FRAME_END,
+        frame_rate=FRAME_RATE,
+        step_rate=STEP_RATE,
     )
     FLAGS = parser.parse_args()
     scene, rng, output_dir, scratch_dir = kb.setup(FLAGS)
@@ -72,22 +130,14 @@ def generate_sequence(seq_id: int, output_root: Path = Path("output")):
     renderer = KubricBlender(scene, use_denoising=True, samples_per_pixel=64)
     simulator = KubricSimulator(scene)    
 
-    source_path = os.getenv("SHAPENET_GCP_BUCKET", shapenet_manifest)
-    asset_source = kb.AssetSource.from_manifest(source_path)
-    hdri_source = kb.AssetSource.from_manifest(hdri_manifest)
-    kubasic_source = kb.AssetSource.from_manifest(kubasic_manifest)
-
     # --- Scene background HDRI ---
-    hdri_id = rng.choice(list(hdri_source._assets.keys()))
+    hdri_id = rng.choice(list(HDRI_SOURCE._assets.keys()))
     print(f"🌅 Using HDRI: {hdri_id}")
-    background_hdri = hdri_source.create(asset_id=hdri_id)
-    print(f"📸 Loading HDRI: {background_hdri.filename}")
-    renderer._set_ambient_light_hdri(background_hdri.filename)
-    #TODO: AGGIUNGERE BACKGROUND AI METADATA
+    background_hdri = HDRI_SOURCE.create(asset_id=hdri_id)
+    renderer._set_ambient_light_hdri(background_hdri.filename, hdri_rotation=orientation, strength=light_intensity)
 
     # --- Dome ---
-    dome = kubasic_source.create(asset_id="dome",friction = 1.0, restitution = 0.0, static= True, background= True)
-    assert isinstance(dome, kb.FileBasedObject)
+    dome = KUBASIC_SOURCE.create(asset_id="dome", friction=1.0, restitution=0.0, static=True, background=True)
     scene += dome
     dome_blender = dome.linked_objects[renderer]
     texture_node = dome_blender.data.materials[0].node_tree.nodes["Image Texture"]
@@ -95,66 +145,38 @@ def generate_sequence(seq_id: int, output_root: Path = Path("output")):
 
     # --- Camera ---
     scene.camera = kb.PerspectiveCamera(name="camera", focal_length=35., sensor_width=32)
-    scene.camera.position = kb.sample_point_in_half_sphere_shell(
-      inner_radius=7., outer_radius=9., offset=0.1)
+    scene.camera.position = camera_position
     scene.camera.look_at((0, 0, 0))
-    #TODO: AGGIUNGERE MOVIMENTO DI CAMERA
 
+    
 
     # === STATIC OBJECTS ===
-    num_static = rng.randint(min_static, max_static + 1)
+    num_static = rng.randint(MIN_STATIC, MAX_STATIC + 1)
     print(f"📦 Generating {num_static} static objects...")
-    shape_ids = sorted(asset_source._assets.keys())  # ✅ alternativa equivalente
     for _ in range(num_static):
-        shape_id = rng.choice(shape_ids)
-        obj = asset_source.create(
-            shape_id
-        )
-        print(f"📦 Creating static object: {shape_id} at position :{obj.position}")
-        #assert isinstance(obj, kb.FileBasedObject)
+        #shape_id = rng.choice(shape_ids)
+        obj = ASSET_SOURCE.create(shape_id)
         scale = rng.uniform(0.75, 3.0)
-        obj.scale = scale / np.max(obj.bounds[1]- obj.bounds[0])  # Normalize scale
+        obj.scale = scale / np.max(obj.bounds[1] - obj.bounds[0])  # Normalize scale
         scene += obj
-        kb.move_until_no_overlap(obj, simulator, spawn_region=spawn_region_static, rng=rng)
-        
-        #obj.friction = 1.0
-        #obj.restitution = 0.0
-        #TODO AGGIUNGERE STATICO F/T AI METADATA
-        print(f"📦 Static objects added: {num_static} ({shape_id}) at position: {obj.position}")
-
-    # --- Run static simulation ---
-#    simulator.run(frame_start=-100, frame_end=0)
-#    for obj in scene.foreground_assets:
-#        if hasattr(obj, "velocity"):
-#            obj.velocity = (0., 0., 0.)
-#            obj.friction, obj.restitution = 0.5, 0.5
-    
-#    dome.friction = 0.3
-#    dome.restitution = 0.5
+        kb.move_until_no_overlap(obj, simulator, spawn_region=SPAWN_REGION_STATIC, rng=rng)
+        print(f"📦 Static object {shape_id} at {obj.position}")
 
     # === DYNAMIC OBJECTS ===
-    num_dynamic = rng.randint(min_dynamic, max_dynamic + 1)
+    num_dynamic = rng.randint(MIN_DYNAMIC, MAX_DYNAMIC + 1)
     print(f"🚀 Generating {num_dynamic} dynamic objects...")
     for _ in range(num_dynamic):
-        shape_id = rng.choice(shape_ids)
-        obj = asset_source.create(
-            shape_id)
-        print(f"🚀 Creating dynamic object: {shape_id} at position :{obj.position}")
-        assert isinstance(obj, kb.FileBasedObject)
+        #shape_id = rng.choice(shape_ids)
+        obj = ASSET_SOURCE.create(shape_id)
         scale = rng.uniform(0.75, 3.0)
         obj.scale = scale / np.max(obj.bounds[1] - obj.bounds[0])
         scene += obj
-        kb.move_until_no_overlap(obj, simulator, spawn_region=spawn_region_dynamic, rng=rng)
-        obj.velocity = (rng.uniform(*VELOCITY_RANGE) -
-                  [obj.position[0], obj.position[1], 0])
-        #obj.mass = 1.0
-        #obj.static = False
-        print(f"🚀 Dynamic object {shape_id} velocity set to {obj.velocity} at position: {obj.position}")
-        #scene.gravity = (0, 0, -9.81)
+        kb.move_until_no_overlap(obj, simulator, spawn_region=SPAWN_REGION_DYNAMIC, rng=rng)
+        obj.velocity = (rng.uniform(*VELOCITY_RANGE) - [obj.position[0], obj.position[1], 0])
+        print(f"🚀 Dynamic object {shape_id} with velocity {obj.velocity}")
 
-    # === Main simulation run ===
-    animation,collisions = simulator.run(frame_start=0, frame_end=scene.frame_end + 1)
-
+    # === Simulation ===
+    animation, collisions = simulator.run(frame_start=0, frame_end=scene.frame_end + 1)
 
     # === Rendering ===
     renderer.save_state(output_root / f"states/seq{seq_id}.blend")
@@ -163,15 +185,12 @@ def generate_sequence(seq_id: int, output_root: Path = Path("output")):
     # === Post-processing ===
     kb.compute_visibility(frames_dict["segmentation"], scene.assets)
     frames_dict["segmentation"] = kb.adjust_segmentation_idxs(
-        frames_dict["segmentation"],
-        scene.assets,
-        [obj]).astype(np.uint8)
+        frames_dict["segmentation"], scene.assets, [obj]).astype(np.uint8)
 
     # === Saving frames ===
-    print(f"💾 Salvataggio frame per seq{seq_id} in corso...")
+    print(f"💾 Salvataggio frame per seq{seq_id}...")
     for key in tqdm(frames_dict.keys(), desc=f"Scrittura Frame seq{seq_id}", unit="tipo"):
         value = frames_dict[key]
-
         base_dir = output_root / key / f"seq{seq_id}"
         imgs_dir = base_dir / "imgs"
         imgs_dir.mkdir(parents=True, exist_ok=True)
@@ -183,45 +202,80 @@ def generate_sequence(seq_id: int, output_root: Path = Path("output")):
             rgb_imgs_dir = rgb_base_dir / "imgs"
             rgb_imgs_dir.mkdir(parents=True, exist_ok=True)
             writer_map["rgb"](rgb, rgb_imgs_dir)
-
             with open(rgb_base_dir / "fps.txt", "w") as f:
                 f.write(str(scene.frame_rate))
 
         elif key in writer_map:
             writer_map[key](value, imgs_dir)
-
             with open(base_dir / "fps.txt", "w") as f:
                 f.write(str(scene.frame_rate))
-        else:
-            logging.warning(f"⚠️ Nessuna funzione di salvataggio per '{key}' — ignorato.")
-    
-    # === Collect metadata ===
+
+    # === Metadata ===
     exclude_names = {"floor", "camera", "sun"}
     scene_objects = [obj for obj in scene.assets if obj.name not in exclude_names]
     data = {
-    "scene_metadata": kb.get_scene_metadata(scene),
-    "camera": kb.get_camera_info(scene.camera),
-    "object": kb.get_instance_info(scene, scene_objects)
+        "scene_metadata": kb.get_scene_metadata(scene),
+        "camera": kb.get_camera_info(scene.camera),
+        "object": kb.get_instance_info(scene, scene_objects)
     }
-
     annotations_dir = output_root / "annotations"
     annotations_dir.mkdir(parents=True, exist_ok=True)
     metadata_path = annotations_dir / f"seq{seq_id}_metadata.json"
     kb.file_io.write_json(filename=metadata_path, data=data)
 
-    kb.done()
-    
+
+# ============================================================
+# --- CHOOSE IDS ---
+# ============================================================
+def chooseClass(class_name):
+    return [name for name, spec in ASSET_SOURCE._assets.items() if spec["metadata"]["category"] == class_name]
 
 
+# ============================================================
+# --- MAIN ---
+# ============================================================
 
-
-def main(num_sequences: int = 5):
-    for seq_id in range(num_sequences):
-        print(f"\n🚀 Generazione sequenza {seq_id}")
-        generate_sequence(seq_id)
+def main():
+    seq_id = 0
+    selected_classes = [classes[i] for i in range(2)]
+    for shape_class in selected_classes:
+        shape_ids = chooseClass(shape_class)
+        shape_id = Random.choice(shape_ids)
+        for intensity in light_levels:
+            for orient_name, orientation in light_orientations.items():
+                for cam_name, cam_pos in camera_positions.items():
+                    for color_name, color_value in light_colors.items():
+                        print(f"\n🚀 Generazione sequenza {seq_id} | shape={shape_class} | light={int(intensity*100)}% | orient={orient_name} | cam={cam_name} | color={color_name}")
+                        generate_sequence(seq_id, shape_id, intensity, orientation, cam_pos)
+                        seq_id += 1
     print("\n✅ Tutte le sequenze sono state generate.")
+
+    # Generate additional sequences with multiple objects and random parameters
+    print(f"\n🎲 Generating additional sequences with random multiple objects...")
     
+    # Modified parameters for multiple objects
+    MIN_STATIC, MAX_STATIC = 1, 2
+    MIN_DYNAMIC, MAX_DYNAMIC = 1, 2
+    
+    # Generate 10 additional sequences with random parameters
+    for i in range(10):
+        # Random shape selection
+        random_class = Random.choice(classes)
+        shape_ids = chooseClass(random_class)
+        shape_id = Random.choice(shape_ids)
+        
+        # Random light parameters
+        intensity = Random.choice(light_levels)
+        orient_name, orientation = Random.choice(list(light_orientations.items()))
+        cam_name, cam_pos = Random.choice(list(camera_positions.items()))
+        color_name, color_value = Random.choice(list(light_colors.items()))
+
+        print(f"\n🎲 Random sequence {seq_id} | shape={random_class} | light={int(intensity*100)}% | orient={orient_name} | cam={cam_name} | color={color_name}")
+        generate_sequence(seq_id, shape_id, intensity, orientation, cam_pos, color_value)
+        seq_id += 1
+
+    kb.done()
 
 
 if __name__ == "__main__":
-    main(num_sequences=1)
+    main()

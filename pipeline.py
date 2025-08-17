@@ -1,8 +1,12 @@
 import subprocess
 import os
 import shutil
+import logging
 from rpg_vid2e.upsampling.utils import Upsampler
 from event_generator import EventGenerator
+
+# Setup logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def start_simulation(simulation_type = "gso"):
     user_id = os.getuid()
@@ -28,23 +32,32 @@ def start_simulation(simulation_type = "gso"):
     subprocess.run(cmd)
 
 def pipeline():
+    logging.info("🚀 Avvio pipeline completa")
+    
     # Start the Kubric simulation to generate initial RGB frames
+    logging.info("📹 Avvio simulazione Kubric...")
     start_simulation("shapenet")
+    
     # Clean up any existing upsampled output directory
-    output_dir = "output/upsampled_rgb"
-    if os.path.exists(output_dir):
-        shutil.rmtree(output_dir)
+    #output_dir = "output/upsampled_rgb"
+    #if os.path.exists(output_dir):
+    #    logging.info(f"🧹 Pulizia directory esistente: {output_dir}")
+    #    shutil.rmtree(output_dir)
 
-    # Upsample the RGB frames from the simulation
-    upsampler = Upsampler(input_dir="output/rgb", output_dir=output_dir)
+    # Upsample ALL RGB sequences from the simulation
+    #logging.info("📈 Avvio upsampling per tutte le sequenze...")
+    #upsampler = Upsampler(input_dir="output/rgb", output_dir=output_dir)
     #upsampler.upsample()
-    generator = EventGenerator(
-        image_dir="output/upsampled_rgb/seq0/imgs",
-        timestamp_file="output/upsampled_rgb/seq0/timestamps.txt",
-        output_file="output/events/seq0.npz"
-    )
-    #generator.generate()
-
+    
+    # Generate events for ALL upsampled sequences
+    #logging.info("⚡ Generazione eventi per tutte le sequenze...")
+    #generator = EventGenerator(
+    #    base_dir="output/upsampled_rgb",
+    #    output_base_dir="output/events"
+    #)
+    #successful, failed = generator.generate_all()
+    #
+    #logging.info(f"✅ Pipeline completata: {successful} sequenze elaborate con successo, {failed} fallimenti")
 
 if __name__ == "__main__":
     pipeline()
