@@ -75,11 +75,11 @@ KUBASIC_SOURCE = kb.AssetSource.from_manifest(KUBASIC_MANIFEST)
 
 # settings
 shape_ids = sorted(ASSET_SOURCE._assets.keys())
-classes = ["airplane", "ashcan", "bag", "basket", "bathtub", "bed", "bench", "birdhouse", "bookshelf", "bottle", "bowl", "bus", "cabinet", "camera", "can", "cap", "car", "cellular telephone", "chair", "clock", "computer keyboard", "dishwasher", "display", "earphone", "faucet", "file", "guitar", "helmet", "jar", "knife", "lamp", "laptop", "loudspeaker", "mailbox", "microphone", "microwave", "motorcycle", "mug", "piano", "pillow", "pistol", "pot", "printer", "remote control", "rifle", "rocket", "skateboard", "sofa", "stove", "table", "telephone", "tower", "train", "vessel", "washer"]
+classes_all = ["airplane", "ashcan", "bag", "basket", "bathtub", "bed", "bench", "birdhouse", "bookshelf", "bottle", "bowl", "bus", "cabinet", "camera", "can", "cap", "car", "cellular telephone", "chair", "clock", "computer keyboard", "dishwasher", "display", "earphone", "faucet", "file", "guitar", "helmet", "jar", "knife", "lamp", "laptop", "loudspeaker", "mailbox", "microphone", "microwave", "motorcycle", "mug", "piano", "pillow", "pistol", "pot", "printer", "remote control", "rifle", "rocket", "skateboard", "sofa", "stove", "table", "telephone", "tower", "train", "vessel", "washer"]
 
-light_levels = [0.0, 0.25, 0.5, 0.75, 1.0]  # 0–100%
+light_levels_all = [0.0, 0.25, 0.5, 0.75, 1.0]  # 0–100%
 
-light_orientations = {
+light_orientations_all = {
     "front": (0., 0., 0.),
     "side_45": (0., 0., np.pi/4),
     "side_90": (0., 0., np.pi/2),
@@ -88,7 +88,7 @@ light_orientations = {
     "bottom": (-np.pi/2, 0., 0.)
 }
 
-camera_positions = {
+camera_positions_all = {
     "front": (0, -8, 0),            # 0° frontale
     "tilt_30": (4, -7, 3),          # 30° inclinata
     "tilt_60": (7, -4, 5),          # 60° obliqua
@@ -98,7 +98,7 @@ camera_positions = {
     "top": (0, 0, 8),               # zenitale
     "bottom": (0, 0, -8),           # vista dal basso
 }
-light_colors = {
+light_colors_all = {
     "white":   (1.0, 1.0, 1.0, 1.0),
     "red":     (1.0, 0.0, 0.0, 1.0),
     "green":   (0.0, 1.0, 0.0, 1.0),
@@ -314,26 +314,27 @@ def main():
 
     # Generate additional sequences with multiple objects and random parameters
     print(f"\n🎲 Generating additional sequences with random multiple objects...")
-    
+
     # Modified parameters for multiple objects
+    global MIN_STATIC, MAX_STATIC, MIN_DYNAMIC, MAX_DYNAMIC
     MIN_STATIC, MAX_STATIC = 1, 2
     MIN_DYNAMIC, MAX_DYNAMIC = 1, 2
     
     # Generate 10 additional sequences with random parameters
     for i in range(1):
         # Random shape selection
-        random_class = Random.choice(classes)
+        random_class = Random.choice(classes_all)
         shape_ids = chooseClass(random_class)
         shape_id = Random.choice(shape_ids)
         
         # Random light parameters
-        intensity = Random.choice(light_levels)
-        orient_name, orientation = Random.choice(list(light_orientations.items()))
-        cam_name, cam_pos = Random.choice(list(camera_positions.items()))
-        color_name, color_value = Random.choice(list(light_colors.items()))
+        intensity = Random.choice(light_levels_all)
+        orient_name, orientation = Random.choice(list(light_orientations_all.items()))
+        cam_name, cam_pos = Random.choice(list(camera_positions_all.items()))
+        color_name, color_value = Random.choice(list(light_colors_all.items()))
 
         print(f"\n🎲 Random sequence {seq_id} | shape={random_class} | light={int(intensity*100)}% | orient={orient_name} | cam={cam_name} | color={color_name}")
-        generate_sequence(seq_id, shape_id, intensity, orientation, cam_pos, color_value)
+        generate_sequence(seq_id, shape_id, intensity, orientation, cam_pos, output_root)
         seq_id += 1
 
     kb.done()
