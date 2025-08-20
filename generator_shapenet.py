@@ -23,6 +23,7 @@ from pathlib import Path
 import json
 from collections import defaultdict
 import random as Random
+import argparse
 
 # ============================================================
 # --- CONFIGURAZIONE GLOBALE ---
@@ -73,8 +74,9 @@ KUBASIC_SOURCE = kb.AssetSource.from_manifest(KUBASIC_MANIFEST)
 
 
 # settings
-classes = ["airplane", "ashcan", "bag", "basket", "bathtub", "bed", "bench", "birdhouse", "bookshelf", "bottle", "bowl", "bus", "cabinet", "camera", "can", "cap", "car", "cellular telephone", "chair", "clock", "computer keyboard", "dishwasher", "display", "earphone", "faucet", "file", "guitar", "helmet", "jar", "knife", "lamp", "laptop", "loudspeaker", "mailbox", "microphone", "microwave", "motorcycle", "mug", "piano", "pillow", "pistol", "pot", "printer", "remote control", "rifle", "rocket", "skateboard", "sofa", "stove", "table", "telephone", "tower", "train", "vessel", "washer"]
 shape_ids = sorted(ASSET_SOURCE._assets.keys())
+classes = ["airplane", "ashcan", "bag", "basket", "bathtub", "bed", "bench", "birdhouse", "bookshelf", "bottle", "bowl", "bus", "cabinet", "camera", "can", "cap", "car", "cellular telephone", "chair", "clock", "computer keyboard", "dishwasher", "display", "earphone", "faucet", "file", "guitar", "helmet", "jar", "knife", "lamp", "laptop", "loudspeaker", "mailbox", "microphone", "microwave", "motorcycle", "mug", "piano", "pillow", "pistol", "pot", "printer", "remote control", "rifle", "rocket", "skateboard", "sofa", "stove", "table", "telephone", "tower", "train", "vessel", "washer"]
+
 light_levels = [0.0, 0.25, 0.5, 0.75, 1.0]  # 0–100%
 
 light_orientations = {
@@ -111,6 +113,33 @@ light_colors = {
 print(f"✅ ShapeNet: {len(ASSET_SOURCE._assets)} modelli caricati")
 print(f"✅ HDRI: {len(HDRI_SOURCE._assets)} mappe caricate")
 print(f"✅ KuBasic asset disponibili")
+
+
+# ============================================================
+# --- PARSING DATI ---
+# ============================================================
+
+import argparse
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Kubric ShapeNet generator")
+
+    parser.add_argument("--light_levels", type=str, default="0.25,0.5,1.0",
+                        help="Lista intensità luce separate da virgola")
+    parser.add_argument("--light_colors", type=str, default="white:1.0,1.0,1.0,1.0",
+                        help="Lista colori luce formato name:r,g,b,a separati da ;")
+    parser.add_argument("--camera_positions", type=str, default="tilt_60:7,-4,5",
+                        help="Lista posizioni camera formato name:x,y,z separati da ;")
+    parser.add_argument("--classes", type=str, default="airplane,car,chair",
+                        help="Classi ShapeNet da processare")
+    parser.add_argument("--light_orientations", type=str, default="front:0,0,0",
+                        help="Lista orientazioni luce formato name:x,y,z separati da ;")
+    parser.add_argument("--output_root", type=Path, default=Path("output"),
+                        help="Cartella di output per i risultati")
+    
+
+    return parser.parse_args()
+
 
 # ============================================================
 # --- FUNZIONE DI GENERAZIONE SEQUENZA ---
@@ -236,9 +265,42 @@ def chooseClass(class_name):
 # ============================================================
 
 def main():
+    
+    args = parse_args()
+    
+    # Parse light levels
+    light_levels = [float(x.strip()) for x in args.light_levels.split(",")]
+    
+    # Parse light orientations
+    light_orientations = {}
+    for orient_spec in args.light_orientations.split(";"):
+        name, xyz = orient_spec.split(":")
+        x, y, z = map(float, xyz.split(","))
+        light_orientations[name] = (x, y, z)
+    
+    # Parse light colors
+    light_colors = {}
+    for color_spec in args.light_colors.split(";"):
+        name, rgba = color_spec.split(":")
+        r, g, b, a = map(float, rgba.split(","))
+        light_colors[name] = (r, g, b, a)
+    
+    # Parse camera positions
+    camera_positions = {}
+    for pos_spec in args.camera_positions.split(";"):
+        name, xyz = pos_spec.split(":")
+        x, y, z = map(float, xyz.split(","))
+        camera_positions[name] = (x, y, z)
+    
+    # Parse selected classes
+    classes = [x.strip() for x in args.classes.split(",")]
+    
+    # Use output_root from arguments
+    output_root = args.output_root
+    
     seq_id = 0
-    selected_classes = [classes[i] for i in range(2)]
-    for shape_class in selected_classes:
+    
+    for shape_class in classes:
         shape_ids = chooseClass(shape_class)
         shape_id = Random.choice(shape_ids)
         for intensity in light_levels:
@@ -246,7 +308,7 @@ def main():
                 for cam_name, cam_pos in camera_positions.items():
                     for color_name, color_value in light_colors.items():
                         print(f"\n🚀 Generazione sequenza {seq_id} | shape={shape_class} | light={int(intensity*100)}% | orient={orient_name} | cam={cam_name} | color={color_name}")
-                        generate_sequence(seq_id, shape_id, intensity, orientation, cam_pos)
+                        generate_sequence(seq_id, shape_id, intensity, orientation, cam_pos, output_root)
                         seq_id += 1
     print("\n✅ Tutte le sequenze sono state generate.")
 
@@ -258,7 +320,7 @@ def main():
     MIN_DYNAMIC, MAX_DYNAMIC = 1, 2
     
     # Generate 10 additional sequences with random parameters
-    for i in range(10):
+    for i in range(1):
         # Random shape selection
         random_class = Random.choice(classes)
         shape_ids = chooseClass(random_class)
