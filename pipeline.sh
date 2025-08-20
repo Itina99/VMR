@@ -70,12 +70,9 @@ if [ -d "$UPSAMPLED_DIR" ]; then
   rm -rf "$UPSAMPLED_DIR"
 fi
 
-# ========== 3. UPSAMPLING ==========
-echo "📈 Avvio upsampling..."
-python3 upsampler.py --input_dir "$OUTPUT_DIR/rgb" --output_dir "$UPSAMPLED_DIR"
+# ========== 3. UPSAMPLING AND EVENT GENERATION ==========
 
-# ========== 4. EVENT GENERATION ==========
-echo "⚡ Generazione eventi..."
-python3 event_generator.py --input_dir "$UPSAMPLED_DIR" --output_dir "$EVENTS_DIR"
+echo "⚡ Generazione eventi e upsampling..."
+python3 event_generation.py --input_dir "$UPSAMPLED_DIR" --output_dir "$EVENTS_DIR"
 
 echo "✅ Pipeline completata!"
