@@ -8,45 +8,17 @@ OUTPUT_DIR="output"
 UPSAMPLED_DIR="$OUTPUT_DIR/upsampled_rgb"
 EVENTS_DIR="$OUTPUT_DIR/events"
 
-# elenco delle classi ShapeNet
-CLASSES=("airplane" "ashcan" "bag" "basket" "bathtub" "bed" "bench" "birdhouse" "bookshelf" "bottle" "bowl" "bus" "cabinet" "camera" "can" "cap" "car" "cellular telephone" "chair" "clock" "computer keyboard" "dishwasher" "display" "earphone" "faucet" "file" "guitar" "helmet" "jar" "knife" "lamp" "laptop" "loudspeaker" "mailbox" "microphone" "microwave" "motorcycle" "mug" "piano" "pillow" "pistol" "pot" "printer" "remote control" "rifle" "rocket" "skateboard" "sofa" "stove" "table" "telephone" "tower" "train" "vessel" "washer")
-
-# livelli di intensità luce
-LIGHT_LEVELS=(0.0 0.25 0.5 0.75 1.0)
-
-# orientamenti luce (nome:x,y,z in radianti)
-LIGHT_ORIENTATIONS=(
-    "front:0.0,0.0,0.0"
-    "side_45:0.0,0.0,0.785398"
-    "side_90:0.0,0.0,1.570796"
-    "back_135:0.0,0.0,2.356194"
-    "top:1.570796,0.0,0.0"
-    "bottom:-1.570796,0.0,0.0"
-)
-
-# colori luce (RGBA)
-LIGHT_COLORS=(
-  "white:1.0,1.0,1.0,1.0"
-  "red:1.0,0.0,0.0,1.0"
-  "green:0.0,1.0,0.0,1.0"
-  "blue:0.0,0.0,1.0,1.0"
-  "yellow:1.0,1.0,0.0,1.0"
-  "purple:0.5,0.0,0.5,1.0"
-  "cyan:0.0,1.0,1.0,1.0"
-  "orange:1.0,0.5,0.0,1.0"
-)
-
-# posizioni camera (nome:x,y,z)
-CAMERA_POSITIONS=(
-  "front:0,-8,0"
-  "tilt_30:4,-7,3"
-  "tilt_60:7,-4,5"
-  "side_90:8,0,0"
-  "retro_120:7,4,3"
-  "back_180:0,8,0"
-  "top:0,0,8"
-  "bottom:0,0,-8"
-)
+# Carica configurazioni da file JSON
+CONFIG_FILE="${1:-config.json}"
+if [ -f "$CONFIG_FILE" ]; then
+    SHAPENET_CLASSES=$(python3 -c "import json; config=json.load(open('$CONFIG_FILE')); print(' '.join(config.get('shapenet_classes', [])))")
+    SIMULATION_TYPE=$(python3 -c "import json; config=json.load(open('$CONFIG_FILE')); print(config.get('simulation_type', 'shapenet'))")
+    OUTPUT_DIR=$(python3 -c "import json; config=json.load(open('$CONFIG_FILE')); print(config.get('output_dir', 'output'))")
+    echo "📋 Configurazioni caricate da $CONFIG_FILE"
+else
+    echo "⚠️  File di configurazione $CONFIG_FILE non trovato, uso valori di default"
+    SHAPENET_CLASSES="chair table lamp"
+fi
 
 
 # Utente e gruppo corrente (per Docker)

@@ -55,7 +55,7 @@ def visualize_events(npz_path, resolution=(256, 256), dt_ns=1e6):
 
 
 if __name__ == "__main__":
-    npz_file = "output/events/seq0.npz"
+    npz_file = "output/events/seq4.npz"
     if not os.path.exists(npz_file):
         print(f"File {npz_file} non trovato.")
     else:
