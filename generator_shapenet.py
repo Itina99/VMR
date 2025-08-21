@@ -207,7 +207,7 @@ def generate_sequence(seq_id: int, shape_id:str, light_intensity: float, orienta
 
     # === Simulation ===
     animation, collisions = simulator.run(frame_start=0, frame_end=scene.frame_end + 1)
-    gc.collect()  # Garbage collection to free memory
+
 
     # === Rendering ===
     renderer.save_state(output_root / f"states/seq{seq_id}.blend")
@@ -253,6 +253,7 @@ def generate_sequence(seq_id: int, shape_id:str, light_intensity: float, orienta
     annotations_dir.mkdir(parents=True, exist_ok=True)
     metadata_path = annotations_dir / f"seq{seq_id}_metadata.json"
     kb.file_io.write_json(filename=metadata_path, data=data)
+    gc.collect()  # Garbage collection to free memory
 
 
 # ============================================================
