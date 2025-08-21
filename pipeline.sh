@@ -41,13 +41,7 @@ if [ "$SIMULATION_TYPE" = "shapenet" ]; then
         --user ${USER_ID}:${GROUP_ID} \
         --volume ${CURRENT_DIR}:/kubric \
         kubricdockerhub/kubruntu \
-        /usr/bin/python3 generator_shapenet.py \
-        --shapenet_classes "$SHAPENET_CLASSES" \
-        --output_dir "$OUTPUT_DIR" \
-        --light_levels "$LIGHT_LEVELS" \
-        --light_colors "$LIGHT_COLORS" \
-        --camera_positions "$CAMERA_POSITIONS" \
-        --light_orientations "$LIGHT_ORIENTATIONS"
+        /usr/bin/python3 generator_shapenet.py 
 fi
 
 # ========== 2. CLEANUP OUTPUT ==========

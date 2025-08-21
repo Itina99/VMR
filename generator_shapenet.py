@@ -1,3 +1,4 @@
+import gc
 import logging
 import os
 import numpy as np
@@ -124,15 +125,15 @@ import argparse
 def parse_args():
     parser = argparse.ArgumentParser(description="Kubric ShapeNet generator")
 
-    parser.add_argument("--light_levels", type=str, default="0.25,0.5,1.0",
+    parser.add_argument("--light_levels", type=str, default="0.25,1.0",
                         help="Lista intensità luce separate da virgola")
     parser.add_argument("--light_colors", type=str, default="white:1.0,1.0,1.0,1.0",
                         help="Lista colori luce formato name:r,g,b,a separati da ;")
     parser.add_argument("--camera_positions", type=str, default="tilt_60:7,-4,5",
                         help="Lista posizioni camera formato name:x,y,z separati da ;")
-    parser.add_argument("--classes", type=str, default="airplane,car,chair",
+    parser.add_argument("--classes", type=str, default="airplane,car",
                         help="Classi ShapeNet da processare")
-    parser.add_argument("--light_orientations", type=str, default="front:0,0,0",
+    parser.add_argument("--light_orientations", type=str, default="side_90:0.0,0.0,1.570796",
                         help="Lista orientazioni luce formato name:x,y,z separati da ;")
     parser.add_argument("--output_root", type=Path, default=Path("output"),
                         help="Cartella di output per i risultati")
@@ -206,6 +207,7 @@ def generate_sequence(seq_id: int, shape_id:str, light_intensity: float, orienta
 
     # === Simulation ===
     animation, collisions = simulator.run(frame_start=0, frame_end=scene.frame_end + 1)
+    gc.collect()  # Garbage collection to free memory
 
     # === Rendering ===
     renderer.save_state(output_root / f"states/seq{seq_id}.blend")
@@ -321,7 +323,7 @@ def main():
     MIN_DYNAMIC, MAX_DYNAMIC = 1, 2
     
     # Generate 10 additional sequences with random parameters
-    for i in range(1):
+    for i in range(5):
         # Random shape selection
         random_class = Random.choice(classes_all)
         shape_ids = chooseClass(random_class)
