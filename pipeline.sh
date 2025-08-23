@@ -63,14 +63,14 @@ if [ "$SIMULATION_TYPE" = "shapenet" ]; then
 fi
 
 # ========== 2. CLEANUP OUTPUT ==========
-if [ -d "$UPSAMPLED_DIR" ]; then
-  echo "🧹 Pulizia directory esistente: $UPSAMPLED_DIR"
-  rm -rf "$UPSAMPLED_DIR"
-fi
+# if [ -d "$UPSAMPLED_DIR" ]; then
+#   echo "🧹 Pulizia directory esistente: $UPSAMPLED_DIR"
+#   rm -rf "$UPSAMPLED_DIR"
+# fi
 
 # ========== 3. UPSAMPLING AND EVENT GENERATION ==========
 
-echo "⚡ Generazione eventi e upsampling..."
-python3 event_generation.py --input_dir "$UPSAMPLED_DIR" --output_dir "$EVENTS_DIR"
+# echo "⚡ Generazione eventi e upsampling..."
+# python3 event_generation.py --input_dir "$UPSAMPLED_DIR" --output_dir "$EVENTS_DIR"
 
 echo "✅ Pipeline completata!"

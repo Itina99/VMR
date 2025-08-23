@@ -1,6 +1,7 @@
 import gc
 import logging
 import os
+import re
 import numpy as np
 import kubric as kb
 import bpy
@@ -152,8 +153,6 @@ def parse_args():
 
 def generate_sequence(seq_id: int, shape_id:str, light_intensity: float, orientation: tuple, camera_position: tuple, light_color: tuple, FLAGS, output_root: Path = Path("output")):
 
-    print("crasha qui palese")
-    print("crasha qui palese2")
     scene, rng, output_dir, scratch_dir = kb.setup(FLAGS)
 
     renderer = KubricBlender(scene, use_denoising=True, samples_per_pixel=64)
@@ -278,14 +277,24 @@ def main():
     print("Colors:", args.light_colors)
 
     def _normalize_list_arg(lst):
-        """Accetta ['a','b',...] oppure ['a,b;c d'] e restituisce ['a','b','c','d']."""
+        """Accetta ['a','b',...] oppure ['a,b;c d'] e restituisce ['a','b','c','d'].
+        Se la lista contiene numeri (int/float), li restituisce così com'è.
+        """
         if not lst:
             return []
-        if len(lst) == 1:
+
+        # Caso: lista di numeri → ritorna direttamente
+        if all(isinstance(x, (int, float)) for x in lst):
+            return lst
+
+        # Caso: singola stringa da splittare
+        if len(lst) == 1 and isinstance(lst[0], str):
             s = lst[0]
             return [t for t in re.split(r'[,\s;]+', s) if t]
-        # già lista di token
-        return lst
+
+        # Caso: lista di stringhe già separata
+        return [str(x) for x in lst]
+
 
     # -- classes
     raw_classes = _normalize_list_arg(args.classes)
@@ -372,7 +381,7 @@ def main():
     MIN_DYNAMIC, MAX_DYNAMIC = 1, 2
     
     # Generate 10 additional sequences with random parameters
-    for i in range(5):
+    for i in range(1):
         # Random shape selection
         random_class = Random.choice(classes_all)
         shape_ids = chooseClass(random_class)
