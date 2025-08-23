@@ -122,22 +122,26 @@ print(f"✅ KuBasic asset disponibili")
 
 import argparse
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="Kubric ShapeNet generator")
 
-    parser.add_argument("--light_levels", type=str, default="0.25,1.0",
-                        help="Lista intensità luce separate da virgola")
-    parser.add_argument("--light_colors", type=str, default="white:1.0,1.0,1.0,1.0",
-                        help="Lista colori luce formato name:r,g,b,a separati da ;")
-    parser.add_argument("--camera_positions", type=str, default="tilt_60:7,-4,5",
-                        help="Lista posizioni camera formato name:x,y,z separati da ;")
-    parser.add_argument("--classes", type=str, default="airplane,car",
-                        help="Classi ShapeNet da processare")
-    parser.add_argument("--light_orientations", type=str, default="side_90:0.0,0.0,1.570796",
-                        help="Lista orientazioni luce formato name:x,y,z separati da ;")
-    parser.add_argument("--output_root", type=Path, default=Path("output"),
-                        help="Cartella di output per i risultati")
-    
+def parse_args():
+    parser = kb.ArgumentParser()
+    parser.set_defaults(
+        resolution=RESOLUTION,
+        frame_end=FRAME_END,
+        frame_rate=FRAME_RATE,
+        step_rate=STEP_RATE,
+    )
+
+    parser.add_argument("--classes", nargs="+", default=["airplane", "display", "earphone", "faucet", "microphone"])
+    parser.add_argument("--light_levels", nargs="+", type=float, default=[0.0, 0.25, 0.5, 0.75, 1.0])
+
+    # pattern = nome seguito da 3 o 4 float
+    parser.add_argument("--light_orientations", nargs="+", default=["side_45", "0.0", "0.0", "0.7854", "side_90", "0.0", "0.0", "1.5708"])
+    parser.add_argument("--camera_positions", nargs="+", default=["tilt_30", "4", "-7", "3", "tilt_60", "7", "-4", "5", "top", "0", "0", "8"])
+    parser.add_argument("--light_colors", nargs="+", default=["white", "1.0", "1.0", "1.0", "1.0", "red", "1.0", "0.0", "0.0", "1.0", "orange", "1.0", "0.5", "0.0", "1.0"])
+
+    parser.add_argument("--output_root", type=Path, default=Path("output"))
+
 
     return parser.parse_args()
 
@@ -146,15 +150,10 @@ def parse_args():
 # --- FUNZIONE DI GENERAZIONE SEQUENZA ---
 # ============================================================
 
-def generate_sequence(seq_id: int, shape_id:str, light_intensity: float, orientation: tuple, camera_position: tuple, output_root: Path = Path("output")):
-    parser = kb.ArgumentParser()
-    parser.set_defaults(
-        resolution=RESOLUTION,
-        frame_end=FRAME_END,
-        frame_rate=FRAME_RATE,
-        step_rate=STEP_RATE,
-    )
-    FLAGS = parser.parse_args()
+def generate_sequence(seq_id: int, shape_id:str, light_intensity: float, orientation: tuple, camera_position: tuple, light_color: tuple, FLAGS, output_root: Path = Path("output")):
+
+    print("crasha qui palese")
+    print("crasha qui palese2")
     scene, rng, output_dir, scratch_dir = kb.setup(FLAGS)
 
     renderer = KubricBlender(scene, use_denoising=True, samples_per_pixel=64)
@@ -165,6 +164,8 @@ def generate_sequence(seq_id: int, shape_id:str, light_intensity: float, orienta
     print(f"🌅 Using HDRI: {hdri_id}")
     background_hdri = HDRI_SOURCE.create(asset_id=hdri_id)
     renderer._set_ambient_light_hdri(background_hdri.filename, hdri_rotation=orientation, strength=light_intensity)
+    # --- Set ambient light color ---
+    renderer._set_ambient_light_color(light_color)
 
     # --- Dome ---
     dome = KUBASIC_SOURCE.create(asset_id="dome", friction=1.0, restitution=0.0, static=True, background=True)
@@ -268,35 +269,82 @@ def chooseClass(class_name):
 # ============================================================
 
 def main():
-    
     args = parse_args()
-    
-    # Parse light levels
-    light_levels = [float(x.strip()) for x in args.light_levels.split(",")]
-    
-    # Parse light orientations
+    print("🎛️  Configurazione in corso...")
+    print("Classes:", args.classes)
+    print("Light levels:", args.light_levels)
+    print("Orientations:", args.light_orientations)
+    print("Cameras:", args.camera_positions)
+    print("Colors:", args.light_colors)
+
+    def _normalize_list_arg(lst):
+        """Accetta ['a','b',...] oppure ['a,b;c d'] e restituisce ['a','b','c','d']."""
+        if not lst:
+            return []
+        if len(lst) == 1:
+            s = lst[0]
+            return [t for t in re.split(r'[,\s;]+', s) if t]
+        # già lista di token
+        return lst
+
+    # -- classes
+    raw_classes = _normalize_list_arg(args.classes)
+    classes = raw_classes  # già lista di stringhe singole
+
+    # -- light_levels
+    raw_levels = _normalize_list_arg(args.light_levels)
+    try:
+        light_levels = [float(x) for x in raw_levels]
+    except ValueError as e:
+        raise ValueError(f"light_levels non validi: {raw_levels}") from e
+
+    # -- light_orientations (gruppi da 4: name x y z)
+    raw_orients = _normalize_list_arg(args.light_orientations)
+    if len(raw_orients) % 4 != 0:
+        raise ValueError(f"light_orientations: numero token non multiplo di 4: {raw_orients}")
     light_orientations = {}
-    for orient_spec in args.light_orientations.split(";"):
-        name, xyz = orient_spec.split(":")
-        x, y, z = map(float, xyz.split(","))
+    for i in range(0, len(raw_orients), 4):
+        name = raw_orients[i]
+        try:
+            x, y, z = map(float, raw_orients[i+1:i+4])
+        except ValueError as e:
+            raise ValueError(f"Orientazione non valida per '{name}': {raw_orients[i+1:i+4]}") from e
         light_orientations[name] = (x, y, z)
-    
-    # Parse light colors
-    light_colors = {}
-    for color_spec in args.light_colors.split(";"):
-        name, rgba = color_spec.split(":")
-        r, g, b, a = map(float, rgba.split(","))
-        light_colors[name] = (r, g, b, a)
-    
-    # Parse camera positions
+
+    # -- camera_positions (gruppi da 4: name x y z)
+    raw_cams = _normalize_list_arg(args.camera_positions)
+    if len(raw_cams) % 4 != 0:
+        raise ValueError(f"camera_positions: numero token non multiplo di 4: {raw_cams}")
     camera_positions = {}
-    for pos_spec in args.camera_positions.split(";"):
-        name, xyz = pos_spec.split(":")
-        x, y, z = map(float, xyz.split(","))
+    for i in range(0, len(raw_cams), 4):
+        name = raw_cams[i]
+        try:
+            x, y, z = map(float, raw_cams[i+1:i+4])
+        except ValueError as e:
+            raise ValueError(f"Posizione camera non valida per '{name}': {raw_cams[i+1:i+4]}") from e
         camera_positions[name] = (x, y, z)
-    
-    # Parse selected classes
-    classes = [x.strip() for x in args.classes.split(",")]
+
+    # -- light_colors (gruppi da 5: name r g b a)
+    raw_colors = _normalize_list_arg(args.light_colors)
+    if len(raw_colors) % 5 != 0:
+        raise ValueError(f"light_colors: numero token non multiplo di 5: {raw_colors}")
+    light_colors = {}
+    for i in range(0, len(raw_colors), 5):
+        name = raw_colors[i]
+        try:
+            r, g, b, a = map(float, raw_colors[i+1:i+5])
+        except ValueError as e:
+            raise ValueError(f"Colore luce non valido per '{name}': {raw_colors[i+1:i+5]}") from e
+        light_colors[name] = (r, g, b, a)
+
+
+    print("✅ Config caricate:")
+    print("Classes:", classes)
+    print("Light levels:", light_levels)
+    print("Orientations:", light_orientations)
+    print("Cameras:", camera_positions)
+    print("Colors:", light_colors)
+
     
     # Use output_root from arguments
     output_root = args.output_root
@@ -311,7 +359,7 @@ def main():
                 for cam_name, cam_pos in camera_positions.items():
                     for color_name, color_value in light_colors.items():
                         print(f"\n🚀 Generazione sequenza {seq_id} | shape={shape_class} | light={int(intensity*100)}% | orient={orient_name} | cam={cam_name} | color={color_name}")
-                        generate_sequence(seq_id, shape_id, intensity, orientation, cam_pos, output_root)
+                        generate_sequence(seq_id, shape_id, intensity, orientation, cam_pos, color_value, args, output_root)
                         seq_id += 1
     print("\n✅ Tutte le sequenze sono state generate.")
 
@@ -337,7 +385,7 @@ def main():
         color_name, color_value = Random.choice(list(light_colors_all.items()))
 
         print(f"\n🎲 Random sequence {seq_id} | shape={random_class} | light={int(intensity*100)}% | orient={orient_name} | cam={cam_name} | color={color_name}")
-        generate_sequence(seq_id, shape_id, intensity, orientation, cam_pos, output_root)
+        generate_sequence(seq_id, shape_id, intensity, orientation, cam_pos, color_value, args, output_root)
         seq_id += 1
 
     kb.done()

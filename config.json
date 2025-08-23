@@ -1,20 +1,18 @@
 {
-    "CLASSES": [
-         "basket",  "camera"
-    ],
-    "LIGHT_LEVELS": [0.75, 1.0],
-    "LIGHT_ORIENTATIONS": {
-       
-        "side_90": [0.0, 0.0, 1.570796]
-
+    "classes": ["airplane", "display", "earphone", "faucet", "microphone"],
+    "light_levels": [0.0, 0.25, 0.5, 0.75, 1.0],
+    "light_orientations": {
+        "side_45": [0.0, 0.0, 0.7854],
+        "side_90": [0.0, 0.0, 1.5708]
     },
-    "LIGHT_COLORS": {
+    "camera_positions": {
+        "tilt_30": [4, -7, 3],
+        "tilt_60": [7, -4, 5],
+        "top": [0, 0, 8]
+    },
+    "light_colors": {
         "white": [1.0, 1.0, 1.0, 1.0],
-        "red": [1.0, 0.0, 0.0, 1.0]
-    },
-    "CAMERA_POSITIONS": {
-
-        "tilt_60": [7, -4, 5]
-
+        "red": [1.0, 0.0, 0.0, 1.0],
+        "orange": [1.0, 0.5, 0.0, 1.0]
     }
 }
