@@ -1,20 +1,16 @@
 {
     "classes": ["airplane"],
-    "light_levels": [0.0],
+    "light_levels": [ 0.5],
     "light_orientations": {
-        "side_45": [0.0, 0.0, 0.7854]
+        "side_45": [0.0, 0.0, 0.78539]
     },
     "camera_positions": {
-        "front": [0, -8, 0],
-        "tilt_30": [4, -7, 3],
-        "tilt_60": [7, -4, 5],
-        "side_90": [8, 0, 0],
-        "retro_120": [7, 4, 3],
-        "back_180": [0, 8, 0],
-        "top": [0, 0, 8],
-        "bottom": [0, 0, -8]
+        "tilt_60": [7, -4, 5]
     },
     "light_colors": {
         "white": [1.0, 1.0, 1.0, 1.0]
-    }
+
+    },
+
+    "random_generation": false
 }
