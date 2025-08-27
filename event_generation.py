@@ -7,13 +7,6 @@ from event_generator import EventGenerator
 
 
 def generation():
-
-    output_dir = "output/upsampled_rgb"
-    # Upsample ALL RGB sequences from the simulation
-    logging.info("📈 Avvio upsampling per tutte le sequenze...")
-    upsampler = Upsampler(input_dir="output/rgb", output_dir=output_dir)
-    upsampler.upsample()
-    
     # Generate events for ALL upsampled sequences
     logging.info("⚡ Generazione eventi per tutte le sequenze...")
     generator = EventGenerator(
@@ -23,7 +16,6 @@ def generation():
     successful, failed = generator.generate_all()
     
     logging.info(f"✅ Pipeline completata: {successful} sequenze elaborate con successo, {failed} fallimenti")
-
 
 
 if __name__ == "__main__":

@@ -32,6 +32,7 @@ import argparse
 # ============================================================
 
 logging.basicConfig(level="INFO")
+os.environ["KUBRIC_USE_GPU"] = "1"
 
 writer_map = {
     "rgb": write_rgb_batch,
