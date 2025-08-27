@@ -1,13 +1,16 @@
 {
     "classes": ["airplane"],
-    "light_levels": [0.75],
+    "light_levels": [ 0.5],
     "light_orientations": {
-        "side_45": [0.0, 0.0, 0.7854]
+        "side_45": [0.0, 0.0, 0.78539]
     },
     "camera_positions": {
         "tilt_60": [7, -4, 5]
     },
     "light_colors": {
         "white": [1.0, 1.0, 1.0, 1.0]
-    }
+
+    },
+
+    "random_generation": false
 }

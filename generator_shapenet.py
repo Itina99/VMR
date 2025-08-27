@@ -92,14 +92,14 @@ light_orientations_all = {
 }
 
 camera_positions_all = {
-    "front": (0, -8, 0),            # 0° frontale
-    "tilt_30": (4, -7, 3),          # 30° inclinata
-    "tilt_60": (7, -4, 5),          # 60° obliqua
-    "side_90": (8, 0, 0),           # 90° laterale puro
-    "retro_120": (7, 4, 3),         # 120° retro-inclinata
-    "back_180": (0, 8, 0),          # 180° dietro
-    "top": (0, 0, 8),               # zenitale
-    "bottom": (0, 0, -8),           # vista dal basso
+    "front": (0, -8, 0),            # 0° frontale no con luce 0
+    "tilt_30": (4, -7, 3),          # 30° inclinata no con luce 0
+    "tilt_60": (7, -4, 5),          # 60° obliqua si con luce 0
+    "side_90": (8, 0, 0),           # 90° laterale puro no con luce 0
+    "retro_120": (7, 4, 3),         # 120° retro-inclinata no con luce 0
+    "back_180": (0, 8, 0),          # 180° dietro nope
+    "top": (0, 0, 8),               # zenitale si vede l'oggetto troppo
+    "bottom": (0, 0, -8),           # vista dal basso questo è ok 
 }
 light_colors_all = {
     "white":   (1.0, 1.0, 1.0, 1.0),
@@ -136,14 +136,12 @@ def parse_args():
 
     parser.add_argument("--classes", nargs="+", default=["airplane", "display", "earphone", "faucet", "microphone"])
     parser.add_argument("--light_levels", nargs="+", type=float, default=[0.0, 0.25, 0.5, 0.75, 1.0])
-
     # pattern = nome seguito da 3 o 4 float
     parser.add_argument("--light_orientations", nargs="+", default=["side_45", "0.0", "0.0", "0.7854", "side_90", "0.0", "0.0", "1.5708"])
     parser.add_argument("--camera_positions", nargs="+", default=["tilt_30", "4", "-7", "3", "tilt_60", "7", "-4", "5", "top", "0", "0", "8"])
     parser.add_argument("--light_colors", nargs="+", default=["white", "1.0", "1.0", "1.0", "1.0", "red", "1.0", "0.0", "0.0", "1.0", "orange", "1.0", "0.5", "0.0", "1.0"])
-
     parser.add_argument("--output_root", type=Path, default=Path("output"))
-
+    parser.add_argument("--rand_gen", type=lambda x: x.lower() == 'true', default=False, help="Genera sequenze aggiuntive con parametri casuali e oggetti multipli")
 
     return parser.parse_args()
 
@@ -169,6 +167,7 @@ def generate_sequence(seq_id: int, shape_id:str, light_intensity: float, orienta
 
     # --- Dome ---
     dome = KUBASIC_SOURCE.create(asset_id="dome", friction=1.0, restitution=0.0, static=True, background=True)
+    assert isinstance(dome, kb.FileBasedObject)
     scene += dome
     dome_blender = dome.linked_objects[renderer]
     texture_node = dome_blender.data.materials[0].node_tree.nodes["Image Texture"]
@@ -193,6 +192,17 @@ def generate_sequence(seq_id: int, shape_id:str, light_intensity: float, orienta
         kb.move_until_no_overlap(obj, simulator, spawn_region=SPAWN_REGION_STATIC, rng=rng)
         print(f"📦 Static object {shape_id} at {obj.position}")
 
+    print("Simulating to let objects settle...")
+    _, _ = simulator.run(frame_start=-100, frame_end=0)
+
+    print("Stopping any moving objects...")
+    # stop any objects that are still moving and reset friction / restitution
+    for obj in scene.foreground_assets:
+        if hasattr(obj, "velocity"):
+            obj.velocity = (0., 0., 0.)
+            obj.friction = 0.5
+            obj.restitution = 0.5
+
     # === DYNAMIC OBJECTS ===
     num_dynamic = rng.randint(MIN_DYNAMIC, MAX_DYNAMIC + 1)
     print(f"🚀 Generating {num_dynamic} dynamic objects...")
@@ -207,14 +217,17 @@ def generate_sequence(seq_id: int, shape_id:str, light_intensity: float, orienta
         print(f"🚀 Dynamic object {shape_id} with velocity {obj.velocity}")
 
     # === Simulation ===
+    print("🎬 Simulazione...")
     animation, collisions = simulator.run(frame_start=0, frame_end=scene.frame_end + 1)
 
 
     # === Rendering ===
+    print("🎥 Rendering...")
     renderer.save_state(output_root / f"states/seq{seq_id}.blend")
     frames_dict = renderer.render()
 
     # === Post-processing ===
+    print("🎞️ Post-processing...")
     kb.compute_visibility(frames_dict["segmentation"], scene.assets)
     frames_dict["segmentation"] = kb.adjust_segmentation_idxs(
         frames_dict["segmentation"], scene.assets, [obj]).astype(np.uint8)
@@ -373,30 +386,31 @@ def main():
                         seq_id += 1
     print("\n✅ Tutte le sequenze sono state generate.")
 
-    # Generate additional sequences with multiple objects and random parameters
-    print(f"\n🎲 Generating additional sequences with random multiple objects...")
+    # Generate additional sequences with multiple objects and random parameters if enabled
+    if args.rand_gen:
+        print(f"\n🎲 Generating additional sequences with random multiple objects...")
 
-    # Modified parameters for multiple objects
-    global MIN_STATIC, MAX_STATIC, MIN_DYNAMIC, MAX_DYNAMIC
-    MIN_STATIC, MAX_STATIC = 1, 2
-    MIN_DYNAMIC, MAX_DYNAMIC = 1, 2
-    
-    # Generate 10 additional sequences with random parameters
-    for i in range(1):
-        # Random shape selection
-        random_class = Random.choice(classes_all)
-        shape_ids = chooseClass(random_class)
-        shape_id = Random.choice(shape_ids)
+        # Modified parameters for multiple objects
+        global MIN_STATIC, MAX_STATIC, MIN_DYNAMIC, MAX_DYNAMIC
+        MIN_STATIC, MAX_STATIC = 1, 2
+        MIN_DYNAMIC, MAX_DYNAMIC = 1, 2
         
-        # Random light parameters
-        intensity = Random.choice(light_levels_all)
-        orient_name, orientation = Random.choice(list(light_orientations_all.items()))
-        cam_name, cam_pos = Random.choice(list(camera_positions_all.items()))
-        color_name, color_value = Random.choice(list(light_colors_all.items()))
+        # Generate 10 additional sequences with random parameters
+        for i in range(1):
+            # Random shape selection
+            random_class = Random.choice(classes_all)
+            shape_ids = chooseClass(random_class)
+            shape_id = Random.choice(shape_ids)
+            
+            # Random light parameters
+            intensity = Random.choice(light_levels_all)
+            orient_name, orientation = Random.choice(list(light_orientations_all.items()))
+            cam_name, cam_pos = Random.choice(list(camera_positions_all.items()))
+            color_name, color_value = Random.choice(list(light_colors_all.items()))
 
-        print(f"\n🎲 Random sequence {seq_id} | shape={random_class} | light={int(intensity*100)}% | orient={orient_name} | cam={cam_name} | color={color_name}")
-        generate_sequence(seq_id, shape_id, intensity, orientation, cam_pos, color_value, args, output_root)
-        seq_id += 1
+            print(f"\n🎲 Random sequence {seq_id} | shape={random_class} | light={int(intensity*100)}% | orient={orient_name} | cam={cam_name} | color={color_name}")
+            generate_sequence(seq_id, shape_id, intensity, orientation, cam_pos, color_value, args, output_root)
+            seq_id += 1
 
     kb.done()
 

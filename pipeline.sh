@@ -17,6 +17,7 @@ if [ -f "$CONFIG_FILE" ]; then
     LIGHT_ORIENTATIONS=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); d=c.get('light_orientations', {}); print(' '.join([f\"{k} {v[0]} {v[1]} {v[2]}\" for k,v in d.items()]))")
     CAMERA_POSITIONS=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); d=c.get('camera_positions', {}); print(' '.join([f\"{k} {v[0]} {v[1]} {v[2]}\" for k,v in d.items()]))")
     LIGHT_COLORS=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); d=c.get('light_colors', {}); print(' '.join([f\"{k} {v[0]} {v[1]} {v[2]} {v[3]}\" for k,v in d.items()]))")
+    RAND_GEN=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); print(str(c.get('random_generation', True)).lower())")
 echo "📋 Configurazioni caricate da $CONFIG_FILE"
 else
     echo "⚠️  File di configurazione $CONFIG_FILE non trovato, uso valori di default"
@@ -58,7 +59,8 @@ if [ "$SIMULATION_TYPE" = "shapenet" ]; then
             --light_levels $LIGHT_LEVELS \
             --light_orientations $LIGHT_ORIENTATIONS \
             --camera_positions $CAMERA_POSITIONS \
-            --light_colors $LIGHT_COLORS
+            --light_colors $LIGHT_COLORS \
+            --rand_gen $RAND_GEN
 
 fi
 
