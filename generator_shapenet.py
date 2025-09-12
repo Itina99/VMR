@@ -25,13 +25,15 @@ from pathlib import Path
 import json
 from collections import defaultdict
 import random as Random
-import argparse
+import bmesh
+
+
 
 # ============================================================
 # --- CONFIGURAZIONE GLOBALE ---
 # ============================================================
 
-logging.basicConfig(level="INFO")
+logging.basicConfig(level="WARNING")
 os.environ["KUBRIC_USE_GPU"] = "1"
 
 writer_map = {
@@ -122,7 +124,7 @@ print(f"✅ KuBasic asset disponibili")
 # --- PARSING DATI ---
 # ============================================================
 
-import argparse
+
 
 
 def parse_args():
@@ -143,6 +145,10 @@ def parse_args():
     parser.add_argument("--output_root", type=Path, default=Path("output"))
     parser.add_argument("--rand_gen", type=lambda x: x.lower() == 'true', default=False, help="Genera sequenze aggiuntive con parametri casuali e oggetti multipli")
 
+    #other args by default
+    parser.add_argument("--friction", type=float, default=1.0)
+    parser.add_argument("--restitution", type=float, default=0.0)
+
     return parser.parse_args()
 
 
@@ -158,25 +164,69 @@ def generate_sequence(seq_id: int, shape_id:str, light_intensity: float, orienta
     simulator = KubricSimulator(scene)    
 
     # --- Scene background HDRI ---
-    hdri_id = rng.choice(list(HDRI_SOURCE._assets.keys()))
+    # hdri_id = rng.choice(list(HDRI_SOURCE._assets.keys()))
+    hdri_id = "hikers_cave"
     print(f"🌅 Using HDRI: {hdri_id}")
     background_hdri = HDRI_SOURCE.create(asset_id=hdri_id)
-    renderer._set_ambient_light_hdri(background_hdri.filename, hdri_rotation=orientation, strength=light_intensity)
-    # --- Set ambient light color ---
-    renderer._set_ambient_light_color(light_color)
+    assert isinstance(background_hdri, kb.Texture)
 
-    # --- Dome ---
-    dome = KUBASIC_SOURCE.create(asset_id="dome", friction=1.0, restitution=0.0, static=True, background=True)
-    assert isinstance(dome, kb.FileBasedObject)
+    # HDRI per l’illuminazione globale (luce)
+    renderer._set_ambient_light_hdri(
+        background_hdri.filename,
+        # hdri_rotation=orientation,
+        strength=light_intensity
+    )
+
+    # --- Dome di Kubasic ---
+    dome = KUBASIC_SOURCE.create(
+        asset_id="dome",
+        friction=FLAGS.friction,
+        restitution=FLAGS.restitution,
+        static=True,
+        background=True
+    )
     scene += dome
-    dome_blender = dome.linked_objects[renderer]
-    texture_node = dome_blender.data.materials[0].node_tree.nodes["Image Texture"]
-    texture_node.image = bpy.data.images.load(background_hdri.filename)
 
-    # --- Camera ---
+    # Oggetto Blender del dome
+    dome_blender = dome.linked_objects[renderer]
+
+    # --- Materiale HDRI per la cupola ---
+    hdr_material = bpy.data.materials.new(name="cupola_hdri")
+    hdr_material.use_nodes = True
+    tree = hdr_material.node_tree
+    nodes = tree.nodes
+    links = tree.links
+
+    # Pulisci nodi esistenti
+    for n in nodes:
+        nodes.remove(n)
+
+    output = nodes.new(type="ShaderNodeOutputMaterial")
+    emission = nodes.new(type="ShaderNodeEmission")
+    tex = nodes.new(type="ShaderNodeTexEnvironment")
+
+    # Carica HDRI
+    tex.image = bpy.data.images.load(background_hdri.filename)
+    tex.image.colorspace_settings.name = 'Linear'
+
+    # Collega nodi
+    links.new(tex.outputs['Color'], emission.inputs['Color'])
+    emission.inputs['Strength'].default_value = light_intensity
+    links.new(emission.outputs['Emission'], output.inputs['Surface'])
+
+    # --- Aggiungi un material slot nuovo solo per la cupola ---
+    dome_blender.data.materials.append(hdr_material)
+
+    # --- Assegna HDRI solo alle facce della cupola ---
+    # (quelle sopra il piano z=0)
+    for f in dome_blender.data.polygons:
+        if f.center.z > 0:   # cupola
+            f.material_index = len(dome_blender.data.materials)-1
+# --- Camera ---
     scene.camera = kb.PerspectiveCamera(name="camera", focal_length=35., sensor_width=32)
     scene.camera.position = camera_position
     scene.camera.look_at((0, 0, 0))
+
 
     
 
@@ -222,15 +272,39 @@ def generate_sequence(seq_id: int, shape_id:str, light_intensity: float, orienta
 
 
     # === Rendering ===
-    print("🎥 Rendering...")
+    print("Saving state...")
     renderer.save_state(output_root / f"states/seq{seq_id}.blend")
+    print("🎥 Rendering...")
     frames_dict = renderer.render()
+    #frames_dict = renderer.render_still() # just one frame for testing
 
     # === Post-processing ===
+
     print("🎞️ Post-processing...")
+
+    # --- Calcola visibilità e aggiusta segmentation ---
     kb.compute_visibility(frames_dict["segmentation"], scene.assets)
     frames_dict["segmentation"] = kb.adjust_segmentation_idxs(
         frames_dict["segmentation"], scene.assets, [obj]).astype(np.uint8)
+
+    """     # --- Modifica sfondo in base a light_intensity ---
+        # Assumiamo che "rgba" contenga l'immagine renderizzata finale
+        if "rgba" in frames_dict:
+            rgba = frames_dict["rgba"]
+            rgb = rgba[..., :3]
+            alpha = rgba[..., 3:]
+
+            # Creiamo una maschera dello sfondo basata sul canale alpha
+            # Sfondo = alpha == 0
+            bg_mask = (alpha[..., 0] == 0)  # boolean mask per lo sfondo
+
+            # Applichiamo la scala di luminosità solo sullo sfondo
+            rgb_bg_scaled = rgb.copy()
+            rgb_bg_scaled[bg_mask] = rgb[bg_mask] * light_intensity
+            print(f"element in mask are : {rgb[bg_mask]}")
+            # Aggiorniamo rgb nel dict
+            frames_dict["rgba"][..., :3] = rgb_bg_scaled """
+    
 
     # === Saving frames ===
     print(f"💾 Salvataggio frame per seq{seq_id}...")
