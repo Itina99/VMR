@@ -97,7 +97,8 @@ if __name__ == "__main__":
 
         if images:
             filename = os.path.splitext(os.path.basename(f))[0]
-            output_path = f"{filename}.gif"
+            os.makedirs("gif", exist_ok=True)
+            output_path = os.path.join("gif", f"{filename}.gif")
             images[0].save(
                 output_path,
                 save_all=True,

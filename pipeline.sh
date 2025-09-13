@@ -48,6 +48,9 @@ CURRENT_DIR=$(pwd)
 
 # ========== 1. SIMULAZIONE ==========
 echo "🚀 Avvio simulazione Kubric ($SIMULATION_TYPE)..."
+# Esegue la simulazione ShapeNet usando Docker
+# - Monta la directory corrente come volume /kubric nel container
+# - Passa tutti i parametri di configurazione al generatore
 if [ "$SIMULATION_TYPE" = "shapenet" ]; then
     docker run --rm -it \
         --user ${USER_ID}:${GROUP_ID} \
@@ -61,18 +64,22 @@ if [ "$SIMULATION_TYPE" = "shapenet" ]; then
             --camera_positions $CAMERA_POSITIONS \
             --light_colors $LIGHT_COLORS \
             --rand_gen $RAND_GEN
-
 fi
 
 # ========== 2. CLEANUP OUTPUT ==========
-# if [ -d "$UPSAMPLED_DIR" ]; then
-#   echo "🧹 Pulizia directory esistente: $UPSAMPLED_DIR"
-#   rm -rf "$UPSAMPLED_DIR"
-# fi
+if [ -d "$UPSAMPLED_DIR" ]; then
+    echo "🧹 Pulizia directory esistente: $UPSAMPLED_DIR"
+    rm -rf "$UPSAMPLED_DIR"
+fi
+
 
 # ========== 3. UPSAMPLING AND EVENT GENERATION ==========
 
-# echo "⚡ Generazione eventi e upsampling..."
-# python3 event_generation.py --input_dir "$UPSAMPLED_DIR" --output_dir "$EVENTS_DIR"
+echo "⚡ Generazione eventi e upsampling..."
+python3 upsample_frames.py --input_dir "$OUTPUT_DIR" --output_dir "$UPSAMPLED_DIR"
+echo "✅ Upsampling completato. Immagini salvate in $UPSAMPLED_DIR pulizia da flash..."
+python3 checkflash.py
+echo "✅ Pulizia completata. Generazione eventi..."
+python3 event_generation.py --input_dir "$UPSAMPLED_DIR" --output_dir "$EVENTS_DIR"
 
 echo "✅ Pipeline completata!"

@@ -1,4 +1,6 @@
 output/*
+output1/*
+gif/*
 token.txt
 __pycache__/*
 __pycache__/

@@ -164,8 +164,8 @@ def generate_sequence(seq_id: int, shape_id:str, light_intensity: float, orienta
     simulator = KubricSimulator(scene)    
 
     # --- Scene background HDRI ---
-    # hdri_id = rng.choice(list(HDRI_SOURCE._assets.keys()))
-    hdri_id = "hikers_cave"
+    hdri_id = rng.choice(list(HDRI_SOURCE._assets.keys()))
+    #hdri_id = "hikers_cave"
     print(f"🌅 Using HDRI: {hdri_id}")
     background_hdri = HDRI_SOURCE.create(asset_id=hdri_id)
     assert isinstance(background_hdri, kb.Texture)
