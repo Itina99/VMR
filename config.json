@@ -12,5 +12,10 @@
 
     },
 
-    "random_generation": false
+    "random_generation": false,
+
+    "resolution": [256, 256],
+    "frame_end": 24,
+    "frame_rate": 12,
+    "step_rate": 240
 }

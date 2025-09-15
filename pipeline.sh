@@ -18,6 +18,10 @@ if [ -f "$CONFIG_FILE" ]; then
     CAMERA_POSITIONS=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); d=c.get('camera_positions', {}); print(' '.join([f\"{k} {v[0]} {v[1]} {v[2]}\" for k,v in d.items()]))")
     LIGHT_COLORS=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); d=c.get('light_colors', {}); print(' '.join([f\"{k} {v[0]} {v[1]} {v[2]} {v[3]}\" for k,v in d.items()]))")
     RAND_GEN=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); print(str(c.get('random_generation', True)).lower())")
+    RESOLUTION=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); r=c.get('resolution', [240, 240]); print(f\"{r[0]} {r[1]}\")")
+    FRAME_END=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); print(c.get('frame_end', 24))")
+    FRAME_RATE=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); print(c.get('frame_rate', 12))")
+    STEP_RATE=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); print(c.get('step_rate', 240))")
 echo "📋 Configurazioni caricate da $CONFIG_FILE"
 else
     echo "⚠️  File di configurazione $CONFIG_FILE non trovato, uso valori di default"
@@ -26,6 +30,10 @@ else
     LIGHT_COLORS="white 1.0 1.0 1.0 1.0 red 1.0 0.0 0.0 1.0"
     CAMERA_POSITIONS="front 0 0 5 side 5 0 0 top 0 5 5"
     LIGHT_ORIENTATIONS="top 0 0 1 side 1 0 0"
+    RESOLUTION="240 240"
+    FRAME_END="24"
+    FRAME_RATE="12"
+    STEP_RATE="240"
 fi
 
 
@@ -63,7 +71,11 @@ if [ "$SIMULATION_TYPE" = "shapenet" ]; then
             --light_orientations $LIGHT_ORIENTATIONS \
             --camera_positions $CAMERA_POSITIONS \
             --light_colors $LIGHT_COLORS \
-            --rand_gen $RAND_GEN
+            --rand_gen $RAND_GEN \
+            --resolution $RESOLUTION \
+            --frame_end $FRAME_END \
+            --frame_rate $FRAME_RATE \
+            --step_rate $STEP_RATE
 fi
 
 # ========== 2. CLEANUP OUTPUT ==========

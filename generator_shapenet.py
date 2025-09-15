@@ -129,12 +129,12 @@ print(f"✅ KuBasic asset disponibili")
 
 def parse_args():
     parser = kb.ArgumentParser()
-    parser.set_defaults(
-        resolution=RESOLUTION,
-        frame_end=FRAME_END,
-        frame_rate=FRAME_RATE,
-        step_rate=STEP_RATE,
-    )
+    """     parser.set_defaults(
+            resolution=RESOLUTION,
+            frame_end=FRAME_END,
+            frame_rate=FRAME_RATE,
+            step_rate=STEP_RATE,
+        ) """
 
     parser.add_argument("--classes", nargs="+", default=["airplane", "display", "earphone", "faucet", "microphone"])
     parser.add_argument("--light_levels", nargs="+", type=float, default=[1.0])
