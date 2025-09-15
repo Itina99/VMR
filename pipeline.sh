@@ -18,7 +18,7 @@ if [ -f "$CONFIG_FILE" ]; then
     CAMERA_POSITIONS=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); d=c.get('camera_positions', {}); print(' '.join([f\"{k} {v[0]} {v[1]} {v[2]}\" for k,v in d.items()]))")
     LIGHT_COLORS=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); d=c.get('light_colors', {}); print(' '.join([f\"{k} {v[0]} {v[1]} {v[2]} {v[3]}\" for k,v in d.items()]))")
     RAND_GEN=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); print(str(c.get('random_generation', True)).lower())")
-    RESOLUTION=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); r=c.get('resolution', [240, 240]); print(f\"{r[0]} {r[1]}\")")
+    RESOLUTION=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); print(c.get('resolution', '256x256'))")
     FRAME_END=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); print(c.get('frame_end', 24))")
     FRAME_RATE=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); print(c.get('frame_rate', 12))")
     STEP_RATE=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); print(c.get('step_rate', 240))")
@@ -30,7 +30,7 @@ else
     LIGHT_COLORS="white 1.0 1.0 1.0 1.0 red 1.0 0.0 0.0 1.0"
     CAMERA_POSITIONS="front 0 0 5 side 5 0 0 top 0 5 5"
     LIGHT_ORIENTATIONS="top 0 0 1 side 1 0 0"
-    RESOLUTION="240 240"
+    RESOLUTION="256x256"
     FRAME_END="24"
     FRAME_RATE="12"
     STEP_RATE="240"
@@ -79,23 +79,23 @@ if [ "$SIMULATION_TYPE" = "shapenet" ]; then
 fi
 
 # ========== 2. CLEANUP OUTPUT ==========
-# Remove existing upsampled directory if it exists
-if [ -d "$UPSAMPLED_DIR" ]; then
-    echo "🧹 Pulizia directory esistente: $UPSAMPLED_DIR"
-    rm -rf "$UPSAMPLED_DIR"
-fi
+# # Remove existing upsampled directory if it exists
+# if [ -d "$UPSAMPLED_DIR" ]; then
+#     echo "🧹 Pulizia directory esistente: $UPSAMPLED_DIR"
+#     rm -rf "$UPSAMPLED_DIR"
+# fi
 
-# ========== 3. UPSAMPLING AND EVENT GENERATION ==========
-# Generate upsampled frames from simulation output
-echo "⚡ Generazione eventi e upsampling..."
-python3 upsample_frames.py --input_dir "$OUTPUT_DIR" --output_dir "$UPSAMPLED_DIR"
+# # ========== 3. UPSAMPLING AND EVENT GENERATION ==========
+# # Generate upsampled frames from simulation output
+# echo "⚡ Generazione eventi e upsampling..."
+# python3 upsample_frames.py --input_dir "$OUTPUT_DIR" --output_dir "$UPSAMPLED_DIR"
 
-# Generate events from upsampled frames
-echo "✅ Pulizia completata. Generazione eventi..."
-python3 event_generation.py --input_dir "$UPSAMPLED_DIR" --output_dir "$EVENTS_DIR"
+# # Generate events from upsampled frames
+# echo "✅ Pulizia completata. Generazione eventi..."
+# python3 event_generation.py --input_dir "$UPSAMPLED_DIR" --output_dir "$EVENTS_DIR"
 
-# Create GIF animations from event data
-echo "🎬 Generazione gif eventi..."
-python3 npz_to_gif.py
+# # Create GIF animations from event data
+# echo "🎬 Generazione gif eventi..."
+# python3 npz_to_gif.py
 
-echo "✅ Pipeline completata!"
+# echo "✅ Pipeline completata!"

@@ -14,7 +14,7 @@
 
     "random_generation": false,
 
-    "resolution": [256, 256],
+    "resolution": "256x256",
     "frame_end": 24,
     "frame_rate": 12,
     "step_rate": 240
