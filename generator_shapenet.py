@@ -54,8 +54,8 @@ RESOLUTION = (256, 256)
 FRAME_END = 24
 FRAME_RATE = 12
 STEP_RATE = 240
-MIN_STATIC, MAX_STATIC = 0, 0
-MIN_DYNAMIC, MAX_DYNAMIC = 1, 1
+MIN_STATIC, MAX_STATIC = 1, 3
+MIN_DYNAMIC, MAX_DYNAMIC = 1, 4
 SPAWN_REGION_STATIC = [[-3, -3, 0], [3, 3, 5]]
 SPAWN_REGION_DYNAMIC = [[-3, -3, 1], [3, 3, 5]]
 VELOCITY_RANGE = [(-4., -4., 0.), (4., 4., 0.)]
@@ -238,7 +238,7 @@ def generate_sequence(seq_id: int, shape_id:str, light_intensity: float, orienta
     num_static = rng.randint(MIN_STATIC, MAX_STATIC + 1)
     print(f"📦 Generating {num_static} static objects...")
     for _ in range(num_static):
-        #shape_id = rng.choice(shape_ids)
+        shape_id = rng.choice(shape_ids)
         obj = ASSET_SOURCE.create(shape_id)
         scale = rng.uniform(0.75, 3.0)
         obj.scale = scale / np.max(obj.bounds[1] - obj.bounds[0])  # Normalize scale
@@ -261,7 +261,7 @@ def generate_sequence(seq_id: int, shape_id:str, light_intensity: float, orienta
     num_dynamic = rng.randint(MIN_DYNAMIC, MAX_DYNAMIC + 1)
     print(f"🚀 Generating {num_dynamic} dynamic objects...")
     for _ in range(num_dynamic):
-        #shape_id = rng.choice(shape_ids)
+        shape_id = rng.choice(shape_ids)
         obj = ASSET_SOURCE.create(shape_id)
         scale = rng.uniform(0.75, 3.0)
         obj.scale = scale / np.max(obj.bounds[1] - obj.bounds[0])
@@ -290,24 +290,6 @@ def generate_sequence(seq_id: int, shape_id:str, light_intensity: float, orienta
     kb.compute_visibility(frames_dict["segmentation"], scene.assets)
     frames_dict["segmentation"] = kb.adjust_segmentation_idxs(
         frames_dict["segmentation"], scene.assets, [obj]).astype(np.uint8)
-
-    """     # --- Modifica sfondo in base a light_intensity ---
-        # Assumiamo che "rgba" contenga l'immagine renderizzata finale
-        if "rgba" in frames_dict:
-            rgba = frames_dict["rgba"]
-            rgb = rgba[..., :3]
-            alpha = rgba[..., 3:]
-
-            # Creiamo una maschera dello sfondo basata sul canale alpha
-            # Sfondo = alpha == 0
-            bg_mask = (alpha[..., 0] == 0)  # boolean mask per lo sfondo
-
-            # Applichiamo la scala di luminosità solo sullo sfondo
-            rgb_bg_scaled = rgb.copy()
-            rgb_bg_scaled[bg_mask] = rgb[bg_mask] * light_intensity
-            print(f"element in mask are : {rgb[bg_mask]}")
-            # Aggiorniamo rgb nel dict
-            frames_dict["rgba"][..., :3] = rgb_bg_scaled """
     
 
     # === Saving frames ===
@@ -454,13 +436,13 @@ def main():
     
     for shape_class in classes:
         shape_ids = chooseClass(shape_class)
-        shape_id = Random.choice(shape_ids)
+        
         for intensity in light_levels:
             for orient_name, orientation in light_orientations.items():
                 for cam_name, cam_pos in camera_positions.items():
                     for color_name, color_value in light_colors.items():
                         print(f"\n🚀 Generazione sequenza {seq_id} | shape={shape_class} | light={int(intensity*100)}% | orient={orient_name} | cam={cam_name} | color={color_name}")
-                        generate_sequence(seq_id, shape_id, intensity, orientation, cam_pos, color_value, args, output_root)
+                        generate_sequence(seq_id, shape_ids, intensity, orientation, cam_pos, color_value, args, output_root)
                         seq_id += 1
     print("\n✅ Tutte le sequenze sono state generate.")
 
