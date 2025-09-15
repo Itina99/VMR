@@ -67,18 +67,22 @@ if [ "$SIMULATION_TYPE" = "shapenet" ]; then
 fi
 
 # ========== 2. CLEANUP OUTPUT ==========
+# Remove existing upsampled directory if it exists
 if [ -d "$UPSAMPLED_DIR" ]; then
     echo "🧹 Pulizia directory esistente: $UPSAMPLED_DIR"
     rm -rf "$UPSAMPLED_DIR"
 fi
 
-
 # ========== 3. UPSAMPLING AND EVENT GENERATION ==========
-
+# Generate upsampled frames from simulation output
 echo "⚡ Generazione eventi e upsampling..."
 python3 upsample_frames.py --input_dir "$OUTPUT_DIR" --output_dir "$UPSAMPLED_DIR"
+
+# Generate events from upsampled frames
 echo "✅ Pulizia completata. Generazione eventi..."
 python3 event_generation.py --input_dir "$UPSAMPLED_DIR" --output_dir "$EVENTS_DIR"
+
+# Create GIF animations from event data
 echo "🎬 Generazione gif eventi..."
 python3 npz_to_gif.py
 

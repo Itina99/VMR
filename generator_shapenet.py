@@ -137,11 +137,11 @@ def parse_args():
     )
 
     parser.add_argument("--classes", nargs="+", default=["airplane", "display", "earphone", "faucet", "microphone"])
-    parser.add_argument("--light_levels", nargs="+", type=float, default=[0.0, 0.25, 0.5, 0.75, 1.0])
+    parser.add_argument("--light_levels", nargs="+", type=float, default=[1.0])
     # pattern = nome seguito da 3 o 4 float
-    parser.add_argument("--light_orientations", nargs="+", default=["side_45", "0.0", "0.0", "0.7854", "side_90", "0.0", "0.0", "1.5708"])
-    parser.add_argument("--camera_positions", nargs="+", default=["tilt_30", "4", "-7", "3", "tilt_60", "7", "-4", "5", "top", "0", "0", "8"])
-    parser.add_argument("--light_colors", nargs="+", default=["white", "1.0", "1.0", "1.0", "1.0", "red", "1.0", "0.0", "0.0", "1.0", "orange", "1.0", "0.5", "0.0", "1.0"])
+    parser.add_argument("--light_orientations", nargs="+", default=["side_45", "0.0", "0.0", "0.7854"])
+    parser.add_argument("--camera_positions", nargs="+", default=["tilt_30", "4", "-7", "3"])
+    parser.add_argument("--light_colors", nargs="+", default=["white", "1.0", "1.0", "1.0", "1.0"])
     parser.add_argument("--output_root", type=Path, default=Path("output"))
     parser.add_argument("--rand_gen", type=lambda x: x.lower() == 'true', default=False, help="Genera sequenze aggiuntive con parametri casuali e oggetti multipli")
 
@@ -168,7 +168,7 @@ def generate_sequence(seq_id: int, shape_id:str, light_intensity: float, orienta
     #hdri_id = "hikers_cave"
     print(f"🌅 Using HDRI: {hdri_id}")
     background_hdri = HDRI_SOURCE.create(asset_id=hdri_id)
-    assert isinstance(background_hdri, kb.Texture)
+    #assert isinstance(background_hdri, kb.Texture)
 
     # HDRI per l’illuminazione globale (luce)
     renderer._set_ambient_light_hdri(
@@ -176,7 +176,7 @@ def generate_sequence(seq_id: int, shape_id:str, light_intensity: float, orienta
         # hdri_rotation=orientation,
         strength=light_intensity
     )
-
+    renderer._set_ambient_light_color(light_color)
     # --- Dome di Kubasic ---
     dome = KUBASIC_SOURCE.create(
         asset_id="dome",
@@ -186,42 +186,46 @@ def generate_sequence(seq_id: int, shape_id:str, light_intensity: float, orienta
         background=True
     )
     scene += dome
+    
 
     # Oggetto Blender del dome
     dome_blender = dome.linked_objects[renderer]
+    dome_blender = dome.linked_objects[renderer]
+    texture_node = dome_blender.data.materials[0].node_tree.nodes["Image Texture"]
+    texture_node.image = bpy.data.images.load(background_hdri.filename)
 
-    # --- Materiale HDRI per la cupola ---
-    hdr_material = bpy.data.materials.new(name="cupola_hdri")
-    hdr_material.use_nodes = True
-    tree = hdr_material.node_tree
-    nodes = tree.nodes
-    links = tree.links
+    """     # --- Materiale HDRI per la cupola ---
+        hdr_material = bpy.data.materials.new(name="cupola_hdri")
+        hdr_material.use_nodes = True
+        tree = hdr_material.node_tree
+        nodes = tree.nodes
+        links = tree.links
 
-    # Pulisci nodi esistenti
-    for n in nodes:
-        nodes.remove(n)
+        # Pulisci nodi esistenti
+        for n in nodes:
+            nodes.remove(n)
 
-    output = nodes.new(type="ShaderNodeOutputMaterial")
-    emission = nodes.new(type="ShaderNodeEmission")
-    tex = nodes.new(type="ShaderNodeTexEnvironment")
+        output = nodes.new(type="ShaderNodeOutputMaterial")
+        emission = nodes.new(type="ShaderNodeEmission")
+        tex = nodes.new(type="ShaderNodeTexEnvironment")
 
-    # Carica HDRI
-    tex.image = bpy.data.images.load(background_hdri.filename)
-    tex.image.colorspace_settings.name = 'Linear'
+        # Carica HDRI
+        tex.image = bpy.data.images.load(background_hdri.filename)
+        tex.image.colorspace_settings.name = 'Linear'
 
-    # Collega nodi
-    links.new(tex.outputs['Color'], emission.inputs['Color'])
-    emission.inputs['Strength'].default_value = light_intensity
-    links.new(emission.outputs['Emission'], output.inputs['Surface'])
+        # Collega nodi
+        links.new(tex.outputs['Color'], emission.inputs['Color'])
+        emission.inputs['Strength'].default_value = light_intensity
+        links.new(emission.outputs['Emission'], output.inputs['Surface'])
 
-    # --- Aggiungi un material slot nuovo solo per la cupola ---
-    dome_blender.data.materials.append(hdr_material)
+        # --- Aggiungi un material slot nuovo solo per la cupola ---
+        dome_blender.data.materials.append(hdr_material)
 
-    # --- Assegna HDRI solo alle facce della cupola ---
-    # (quelle sopra il piano z=0)
-    for f in dome_blender.data.polygons:
-        if f.center.z > 0:   # cupola
-            f.material_index = len(dome_blender.data.materials)-1
+        # --- Assegna HDRI solo alle facce della cupola ---
+        # (quelle sopra il piano z=0)
+        for f in dome_blender.data.polygons:
+            if f.center.z > 0:   # cupola
+                f.material_index = len(dome_blender.data.materials)-1 """
 # --- Camera ---
     scene.camera = kb.PerspectiveCamera(name="camera", focal_length=35., sensor_width=32)
     scene.camera.position = camera_position
