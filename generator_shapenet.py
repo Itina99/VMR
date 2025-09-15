@@ -156,7 +156,7 @@ def parse_args():
 # --- FUNZIONE DI GENERAZIONE SEQUENZA ---
 # ============================================================
 
-def generate_sequence(seq_id: int, shape_id:str, light_intensity: float, orientation: tuple, camera_position: tuple, light_color: tuple, FLAGS, output_root: Path = Path("output")):
+def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orientation: tuple, camera_position: tuple, light_color: tuple, FLAGS, output_root: Path = Path("output")):
 
     scene, rng, output_dir, scratch_dir = kb.setup(FLAGS)
 
@@ -460,7 +460,6 @@ def main():
             # Random shape selection
             random_class = Random.choice(classes_all)
             shape_ids = chooseClass(random_class)
-            shape_id = Random.choice(shape_ids)
             
             # Random light parameters
             intensity = Random.choice(light_levels_all)
@@ -469,7 +468,7 @@ def main():
             color_name, color_value = Random.choice(list(light_colors_all.items()))
 
             print(f"\n🎲 Random sequence {seq_id} | shape={random_class} | light={int(intensity*100)}% | orient={orient_name} | cam={cam_name} | color={color_name}")
-            generate_sequence(seq_id, shape_id, intensity, orientation, cam_pos, color_value, args, output_root)
+            generate_sequence(seq_id, shape_ids, intensity, orientation, cam_pos, color_value, args, output_root)
             seq_id += 1
 
     kb.done()
