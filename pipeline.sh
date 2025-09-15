@@ -77,9 +77,9 @@ fi
 
 echo "⚡ Generazione eventi e upsampling..."
 python3 upsample_frames.py --input_dir "$OUTPUT_DIR" --output_dir "$UPSAMPLED_DIR"
-echo "✅ Upsampling completato. Immagini salvate in $UPSAMPLED_DIR pulizia da flash..."
-python3 checkflash.py
 echo "✅ Pulizia completata. Generazione eventi..."
 python3 event_generation.py --input_dir "$UPSAMPLED_DIR" --output_dir "$EVENTS_DIR"
+echo "🎬 Generazione gif eventi..."
+python3 npz_to_gif.py
 
 echo "✅ Pipeline completata!"

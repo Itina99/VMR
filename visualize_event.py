@@ -44,7 +44,7 @@ def visualize_events(npz_path, resolution=(256, 256), dt_ns=1e6):
         canvas[y_bin[~p_bin], x_bin[~p_bin], 0] = 255  # canale R
 
         # Mostra la finestra
-        cv2.imshow("Event Visualization", canvas)
+        cv2.imshow("Event Visu still have it forfeited.alization", canvas)
         key = cv2.waitKey(1)
         if key == 27:  # ESC per uscire
             break
@@ -55,7 +55,7 @@ def visualize_events(npz_path, resolution=(256, 256), dt_ns=1e6):
 
 
 if __name__ == "__main__":
-    npz_file = "output/events/seq0.npz"
+    npz_file = "output/events/seq1.npz"
     if not os.path.exists(npz_file):
         print(f"File {npz_file} non trovato.")
     else:
