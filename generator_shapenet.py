@@ -26,6 +26,7 @@ import json
 from collections import defaultdict
 import random as Random
 import bmesh
+from HDRISelector import HDRISelector
 
 
 
@@ -76,6 +77,7 @@ source_path = os.getenv("SHAPENET_GCP_BUCKET", SHAPENET_MANIFEST)
 ASSET_SOURCE = kb.AssetSource.from_manifest(source_path)
 HDRI_SOURCE = kb.AssetSource.from_manifest(HDRI_MANIFEST)
 KUBASIC_SOURCE = kb.AssetSource.from_manifest(KUBASIC_MANIFEST)
+selector = HDRISelector(source=HDRI_SOURCE, json_path="hdri.json")
 
 
 # settings
@@ -164,11 +166,16 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
     simulator = KubricSimulator(scene)    
 
     # --- Scene background HDRI ---
-    hdri_id = rng.choice(list(HDRI_SOURCE._assets.keys()))
+    for _ in range(3):  # Scegli 3 HDRI diversi
+        hdri_id = selector.pick(light_intensity)
+        print(f"🌅 Tentativo HDRI: {hdri_id}")
+    #hdri_id = rng.choice(list(HDRI_SOURCE._assets.keys()))
+    hdri_id = selector.pick(light_intensity)
     #hdri_id = "hikers_cave"
     print(f"🌅 Using HDRI: {hdri_id}")
     background_hdri = HDRI_SOURCE.create(asset_id=hdri_id)
     #assert isinstance(background_hdri, kb.Texture)
+
 
     # HDRI per l’illuminazione globale (luce)
     renderer._set_ambient_light_hdri(
