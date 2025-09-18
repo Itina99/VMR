@@ -27,6 +27,8 @@ from collections import defaultdict
 import random as Random
 import bmesh
 from HDRISelector import HDRISelector
+from mathutils import Vector
+
 
 
 
@@ -165,7 +167,7 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
     renderer = KubricBlender(scene, use_denoising=True, samples_per_pixel=64)
     simulator = KubricSimulator(scene)    
 
-    # --- Scene background HDRI ---
+    #--- Scene background HDRI ---
     for _ in range(3):  # Scegli 3 HDRI diversi
         hdri_id = selector.pick(light_intensity)
         print(f"🌅 Tentativo HDRI: {hdri_id}")
@@ -181,7 +183,7 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
     renderer._set_ambient_light_hdri(
         background_hdri.filename,
         # hdri_rotation=orientation,
-        strength=light_intensity
+        #strength=light_intensity
     )
     renderer._set_ambient_light_color(light_color)
     # --- Dome di Kubasic ---
@@ -199,40 +201,10 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
     dome_blender = dome.linked_objects[renderer]
     dome_blender = dome.linked_objects[renderer]
     texture_node = dome_blender.data.materials[0].node_tree.nodes["Image Texture"]
-    texture_node.image = bpy.data.images.load(background_hdri.filename)
+    texture_node.image = bpy.data.images.load(background_hdri.filename) 
 
-    """     # --- Materiale HDRI per la cupola ---
-        hdr_material = bpy.data.materials.new(name="cupola_hdri")
-        hdr_material.use_nodes = True
-        tree = hdr_material.node_tree
-        nodes = tree.nodes
-        links = tree.links
 
-        # Pulisci nodi esistenti
-        for n in nodes:
-            nodes.remove(n)
 
-        output = nodes.new(type="ShaderNodeOutputMaterial")
-        emission = nodes.new(type="ShaderNodeEmission")
-        tex = nodes.new(type="ShaderNodeTexEnvironment")
-
-        # Carica HDRI
-        tex.image = bpy.data.images.load(background_hdri.filename)
-        tex.image.colorspace_settings.name = 'Linear'
-
-        # Collega nodi
-        links.new(tex.outputs['Color'], emission.inputs['Color'])
-        emission.inputs['Strength'].default_value = light_intensity
-        links.new(emission.outputs['Emission'], output.inputs['Surface'])
-
-        # --- Aggiungi un material slot nuovo solo per la cupola ---
-        dome_blender.data.materials.append(hdr_material)
-
-        # --- Assegna HDRI solo alle facce della cupola ---
-        # (quelle sopra il piano z=0)
-        for f in dome_blender.data.polygons:
-            if f.center.z > 0:   # cupola
-                f.material_index = len(dome_blender.data.materials)-1 """
 # --- Camera ---
     scene.camera = kb.PerspectiveCamera(name="camera", focal_length=35., sensor_width=32)
     scene.camera.position = camera_position
@@ -322,6 +294,7 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
             with open(base_dir / "fps.txt", "w") as f:
                 f.write(str(scene.frame_rate))
 
+    
     # === Metadata ===
     exclude_names = {"floor", "camera", "sun"}
     scene_objects = [obj for obj in scene.assets if obj.name not in exclude_names]

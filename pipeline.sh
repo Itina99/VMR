@@ -78,6 +78,10 @@ if [ "$SIMULATION_TYPE" = "shapenet" ]; then
             --step_rate $STEP_RATE
 fi
 
+# ========== Creation of darker versions ==========
+echo "🌑 Creazione versioni scure..."
+python3 postprocessing.py --input_dir "$OUTPUT_DIR"
+
 # ========== 2. CLEANUP OUTPUT ==========
 # # Remove existing upsampled directory if it exists
 # if [ -d "$UPSAMPLED_DIR" ]; then
