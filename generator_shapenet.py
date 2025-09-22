@@ -168,15 +168,11 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
     simulator = KubricSimulator(scene)    
 
     #--- Scene background HDRI ---
-    for _ in range(3):  # Scegli 3 HDRI diversi
-        hdri_id = selector.pick(light_intensity)
-        print(f"🌅 Tentativo HDRI: {hdri_id}")
-    #hdri_id = rng.choice(list(HDRI_SOURCE._assets.keys()))
     #hdri_id = selector.pick(light_intensity)
     hdri_id = "muddy_autumn_forest"
     print(f"🌅 Using HDRI: {hdri_id}")
     background_hdri = HDRI_SOURCE.create(asset_id=hdri_id)
-    #assert isinstance(background_hdri, kb.Texture)
+
 
 
     """     # HDRI per l’illuminazione globale (luce)
@@ -208,39 +204,39 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
     # --- Usa la tua variabile 'light_intensity'
     logging.info(f"Using light intensity: {light_intensity:.2f}")
 
-    # --- NUOVO: Definiamo due scale di intensità separate ---
-    # 1. Per le fonti di luce (il sole). Usiamo una gamma alta per un calo drastico.
-    LIGHT_SOURCE_GAMMA = 2.5 # Prova a giocare con questo valore (es. 2.2, 2.5, 3.0)
+    # --- CALIBRAZIONE DELLA LUMINOSITÀ ---
+    LIGHT_SOURCE_GAMMA = 1.0
     light_source_intensity = light_intensity ** LIGHT_SOURCE_GAMMA
 
-    # 2. Per la luminosità VISIVA dello sfondo. Usiamo una scala lineare o una gamma leggera.
-    BACKGROUND_GAMMA = 1.0 # Prova con 1.0 (lineare) o un valore basso come 1.5
+    BACKGROUND_GAMMA = 1.0
     background_visual_intensity = light_intensity ** BACKGROUND_GAMMA
 
-    print(f"INFO: Intensità luce scalata: {light_source_intensity:.4f} | Intensità sfondo scalata: {background_visual_intensity:.4f}")
+    # Potenziometro per la luce ambientale di riempimento. Prova a partire con un valore basso.
+    AMBIENT_LIGHT_FACTOR = 0.1
 
-    # --- Azzeriamo la luce del "Mondo" di Blender
+    print(f"INFO: Intensità luce: {light_source_intensity:.4f} | Intensità sfondo: {background_visual_intensity:.4f} | Luce ambiente: {AMBIENT_LIGHT_FACTOR}")
+
+    # --- SOLUZIONE SEMPLIFICATA: Usiamo la luce del Mondo di Blender come riempimento ---
     world_background_node = bpy.context.scene.world.node_tree.nodes.get("Background")
     if world_background_node:
-        world_background_node.inputs["Color"].default_value = (0, 0, 0, 1)
+        # Impostiamo un colore neutro per la luce ambientale (bianco)
+        world_background_node.inputs["Color"].default_value = (1, 1, 1, 1)
+        # Controlliamo la sua POTENZA (Strength) con il nostro potenziometro e l'intensità generale
+        world_background_node.inputs["Strength"].default_value = AMBIENT_LIGHT_FACTOR * light_intensity
+        print("INFO: Luce ambientale del Mondo configurata.")
 
-    # --- Aggiungiamo un Sole, controllato dalla SCALA PER LE LUCI ---
-    # Puoi giocare con l'intensità di base (es. 3.0, 4.0, 5.0) per rendere le ombre più o meno marcate.
-    SUN_BASE_INTENSITY = 2.5
+    # --- Aggiungiamo un Sole
+    SUN_BASE_INTENSITY = 1.0
     sun = kb.DirectionalLight(name="sun", position=(-1, -1, 3.0), look_at=(0, 0, 0), intensity=SUN_BASE_INTENSITY)
     sun.intensity *= light_source_intensity
     scene.add(sun)
 
-    # --- Dome (usando KUBASIC_SOURCE)
+    # --- Dome dello sfondo (il codice rimane identico) ---
     dome = KUBASIC_SOURCE.create(asset_id="dome", name="dome", static=True, background=True)
     scene += dome
     dome_blender = dome.linked_objects[renderer]
-
-    # Applica la texture al dome come sempre
     texture_node_ref = dome_blender.data.materials[0].node_tree.nodes["Image Texture"]
     texture_node_ref.image = bpy.data.images.load(background_hdri.filename)
-
-    # --- Manipolazione del materiale del dome, controllata dalla SCALA PER LO SFONDO ---
     material = dome_blender.data.materials[0]
     node_tree = material.node_tree
     texture_node = node_tree.nodes.get("Image Texture")
@@ -256,14 +252,15 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
 
             color_dimmer_node = node_tree.nodes.new(type='ShaderNodeVectorMath')
             color_dimmer_node.operation = 'MULTIPLY'
-            # Usiamo l'intensità specifica per la visualizzazione dello sfondo
             bg_vec = (background_visual_intensity, background_visual_intensity, background_visual_intensity)
             color_dimmer_node.inputs[1].default_value = bg_vec
 
             node_tree.links.new(texture_node.outputs["Color"], color_dimmer_node.inputs[0])
 
             for dest_socket in original_destinations:
-                node_tree.links.new(color_dimmer_node.outputs["Vector"], dest_socket)
+                node_tree.links.new(node_tree.nodes["Vector Math"].outputs["Vector"], dest_socket)
+
+
 
 
 
