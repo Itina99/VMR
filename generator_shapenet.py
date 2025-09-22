@@ -214,7 +214,7 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
     light_source_intensity = light_intensity ** LIGHT_SOURCE_GAMMA
 
     # 2. Per la luminosità VISIVA dello sfondo. Usiamo una scala lineare o una gamma leggera.
-    BACKGROUND_GAMMA = 1.5 # Prova con 1.0 (lineare) o un valore basso come 1.5
+    BACKGROUND_GAMMA = 1.0 # Prova con 1.0 (lineare) o un valore basso come 1.5
     background_visual_intensity = light_intensity ** BACKGROUND_GAMMA
 
     print(f"INFO: Intensità luce scalata: {light_source_intensity:.4f} | Intensità sfondo scalata: {background_visual_intensity:.4f}")
@@ -226,7 +226,7 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
 
     # --- Aggiungiamo un Sole, controllato dalla SCALA PER LE LUCI ---
     # Puoi giocare con l'intensità di base (es. 3.0, 4.0, 5.0) per rendere le ombre più o meno marcate.
-    SUN_BASE_INTENSITY = 4.0
+    SUN_BASE_INTENSITY = 2.5
     sun = kb.DirectionalLight(name="sun", position=(-1, -1, 3.0), look_at=(0, 0, 0), intensity=SUN_BASE_INTENSITY)
     sun.intensity *= light_source_intensity
     scene.add(sun)
