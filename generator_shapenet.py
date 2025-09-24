@@ -174,31 +174,6 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
     background_hdri = HDRI_SOURCE.create(asset_id=hdri_id)
 
 
-
-    """     # HDRI per l’illuminazione globale (luce)
-        renderer._set_ambient_light_hdri(
-            background_hdri.filename,
-            # hdri_rotation=orientation,
-            #strength=light_intensity
-        )
-        renderer._set_ambient_light_color(light_color)
-        # --- Dome di Kubasic ---
-        dome = KUBASIC_SOURCE.create(
-            asset_id="dome",
-            friction=FLAGS.friction,
-            restitution=FLAGS.restitution,
-            static=True,
-            background=True
-        )
-        scene += dome
-        
-
-        # Oggetto Blender del dome
-        dome_blender = dome.linked_objects[renderer]
-        dome_blender = dome.linked_objects[renderer]
-        texture_node = dome_blender.data.materials[0].node_tree.nodes["Image Texture"]
-        texture_node.image = bpy.data.images.load(background_hdri.filename)  """
-
     scene.metadata["background"] = hdri_id
 
     # --- Usa la tua variabile 'light_intensity'
@@ -212,7 +187,7 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
     background_visual_intensity = light_intensity ** BACKGROUND_GAMMA
 
     # Potenziometro per la luce ambientale di riempimento. Prova a partire con un valore basso.
-    AMBIENT_LIGHT_FACTOR = 0.1
+    AMBIENT_LIGHT_FACTOR = 0.8
 
     print(f"INFO: Intensità luce: {light_source_intensity:.4f} | Intensità sfondo: {background_visual_intensity:.4f} | Luce ambiente: {AMBIENT_LIGHT_FACTOR}")
 
@@ -226,9 +201,8 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
         print("INFO: Luce ambientale del Mondo configurata.")
 
     # --- Aggiungiamo un Sole
-    SUN_BASE_INTENSITY = 1.0
-    sun = kb.DirectionalLight(name="sun", position=(-1, -1, 3.0), look_at=(0, 0, 0), intensity=SUN_BASE_INTENSITY)
-    sun.intensity *= light_source_intensity
+    SUN_BASE_INTENSITY = 0.5
+    sun = kb.DirectionalLight(name="sun", position=(-1, -1, 3.0), look_at=(0, 0, 0), intensity=SUN_BASE_INTENSITY*light_source_intensity)
     scene.add(sun)
 
     # --- Dome dello sfondo (il codice rimane identico) ---
