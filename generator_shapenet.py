@@ -182,9 +182,11 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
     # --- CALIBRAZIONE DELLA LUMINOSITÀ ---
     LIGHT_SOURCE_GAMMA = 1.0
     light_source_intensity = light_intensity ** LIGHT_SOURCE_GAMMA
+    scene.metadata["background"]["light_source_intensity"] = light_source_intensity
 
     BACKGROUND_GAMMA = 1.0
     background_visual_intensity = light_intensity ** BACKGROUND_GAMMA
+    scene.metadata["background"]["background_visual_intensity"] = background_visual_intensity
 
     # Potenziometro per la luce ambientale di riempimento. Prova a partire con un valore basso.
     AMBIENT_LIGHT_FACTOR = 0.8
@@ -201,6 +203,16 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
         print("INFO: Luce ambientale del Mondo configurata.")
 
     # --- Aggiungiamo un Sole
+    SUN_BASE_INTENSITY = 0.5
+    sun = kb.DirectionalLight(name="sun", position=(-1, -1, 3.0), look_at=(0, 0, 0), intensity=SUN_BASE_INTENSITY)
+    sun.intensity *= light_source_intensity
+    scene += sun
+    scene.metadata["light"] = {
+        "type": "DirectionalLight",
+        "base_intensity": SUN_BASE_INTENSITY,
+        "sun_position": sun.position, 
+        "intensity": sun.intensity,
+        "color": light_color}
     SUN_BASE_INTENSITY = 0.5
     sun = kb.DirectionalLight(name="sun", position=(-1, -1, 3.0), look_at=(0, 0, 0), intensity=SUN_BASE_INTENSITY*light_source_intensity)
     scene.add(sun)
@@ -258,6 +270,8 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
         scene += obj
         kb.move_until_no_overlap(obj, simulator, spawn_region=SPAWN_REGION_STATIC, rng=rng)
         print(f"📦 Static object {shape_id} at {obj.position}")
+        obj.metadata["scale"] = obj.scale
+        obj.metadata["is_dynamic"] = False
 
     print("Simulating to let objects settle...")
     _, _ = simulator.run(frame_start=-100, frame_end=0)
@@ -282,6 +296,8 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
         kb.move_until_no_overlap(obj, simulator, spawn_region=SPAWN_REGION_DYNAMIC, rng=rng)
         obj.velocity = (rng.uniform(*VELOCITY_RANGE) - [obj.position[0], obj.position[1], 0])
         print(f"🚀 Dynamic object {shape_id} with velocity {obj.velocity}")
+        obj.metadata["scale"] = obj.scale
+        obj.metadata["is_dynamic"] = True
 
     # === Simulation ===
     print("🎬 Simulazione...")
