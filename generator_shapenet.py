@@ -182,11 +182,9 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
     # --- CALIBRAZIONE DELLA LUMINOSITÀ ---
     LIGHT_SOURCE_GAMMA = 1.0
     light_source_intensity = light_intensity ** LIGHT_SOURCE_GAMMA
-    scene.metadata["background"]["light_source_intensity"] = light_source_intensity
 
     BACKGROUND_GAMMA = 1.0
     background_visual_intensity = light_intensity ** BACKGROUND_GAMMA
-    scene.metadata["background"]["background_visual_intensity"] = background_visual_intensity
 
     # Potenziometro per la luce ambientale di riempimento. Prova a partire con un valore basso.
     AMBIENT_LIGHT_FACTOR = 0.8
@@ -204,18 +202,11 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
 
     # --- Aggiungiamo un Sole
     SUN_BASE_INTENSITY = 0.5
-    sun = kb.DirectionalLight(name="sun", position=(-1, -1, 3.0), look_at=(0, 0, 0), intensity=SUN_BASE_INTENSITY)
-    sun.intensity *= light_source_intensity
-    scene += sun
-    scene.metadata["light"] = {
-        "type": "DirectionalLight",
-        "base_intensity": SUN_BASE_INTENSITY,
-        "sun_position": sun.position, 
-        "intensity": sun.intensity,
-        "color": light_color}
-    SUN_BASE_INTENSITY = 0.5
     sun = kb.DirectionalLight(name="sun", position=(-1, -1, 3.0), look_at=(0, 0, 0), intensity=SUN_BASE_INTENSITY*light_source_intensity)
+
     scene.add(sun)
+
+
 
     # --- Dome dello sfondo (il codice rimane identico) ---
     dome = KUBASIC_SOURCE.create(asset_id="dome", name="dome", static=True, background=True)
@@ -246,32 +237,27 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
             for dest_socket in original_destinations:
                 node_tree.links.new(node_tree.nodes["Vector Math"].outputs["Vector"], dest_socket)
 
-
-
-
-
-
-# --- Camera ---
+    # --- Camera ---
     scene.camera = kb.PerspectiveCamera(name="camera", focal_length=35., sensor_width=32)
     scene.camera.position = camera_position
     scene.camera.look_at((0, 0, 0))
 
 
-    
+
 
     # === STATIC OBJECTS ===
     num_static = rng.randint(MIN_STATIC, MAX_STATIC + 1)
     print(f"📦 Generating {num_static} static objects...")
-    for _ in range(num_static):
+    for idx in range(num_static):
         shape_id = rng.choice(shape_ids)
         obj = ASSET_SOURCE.create(shape_id)
+        obj.segmentation_id = idx + 1  # Assign segmentation ID
+
         scale = rng.uniform(0.75, 3.0)
         obj.scale = scale / np.max(obj.bounds[1] - obj.bounds[0])  # Normalize scale
         scene += obj
         kb.move_until_no_overlap(obj, simulator, spawn_region=SPAWN_REGION_STATIC, rng=rng)
         print(f"📦 Static object {shape_id} at {obj.position}")
-        obj.metadata["scale"] = obj.scale
-        obj.metadata["is_dynamic"] = False
 
     print("Simulating to let objects settle...")
     _, _ = simulator.run(frame_start=-100, frame_end=0)
@@ -287,17 +273,16 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
     # === DYNAMIC OBJECTS ===
     num_dynamic = rng.randint(MIN_DYNAMIC, MAX_DYNAMIC + 1)
     print(f"🚀 Generating {num_dynamic} dynamic objects...")
-    for _ in range(num_dynamic):
+    for idx in range(num_dynamic):
         shape_id = rng.choice(shape_ids)
         obj = ASSET_SOURCE.create(shape_id)
+        obj.segmentation_id = num_static + idx + 1  # Unique ID
         scale = rng.uniform(0.75, 3.0)
         obj.scale = scale / np.max(obj.bounds[1] - obj.bounds[0])
         scene += obj
         kb.move_until_no_overlap(obj, simulator, spawn_region=SPAWN_REGION_DYNAMIC, rng=rng)
         obj.velocity = (rng.uniform(*VELOCITY_RANGE) - [obj.position[0], obj.position[1], 0])
         print(f"🚀 Dynamic object {shape_id} with velocity {obj.velocity}")
-        obj.metadata["scale"] = obj.scale
-        obj.metadata["is_dynamic"] = True
 
     # === Simulation ===
     print("🎬 Simulazione...")
@@ -309,17 +294,26 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
     renderer.save_state(output_root / f"states/seq{seq_id}.blend")
     print("🎥 Rendering...")
     frames_dict = renderer.render()
-    #frames_dict = renderer.render_still() # just one frame for testing
+
+
 
     # === Post-processing ===
-
     print("🎞️ Post-processing...")
 
     # --- Calcola visibilità e aggiusta segmentation ---
     kb.compute_visibility(frames_dict["segmentation"], scene.assets)
     frames_dict["segmentation"] = kb.adjust_segmentation_idxs(
         frames_dict["segmentation"], scene.assets, [obj]).astype(np.uint8)
-    
+
+    visible_foreground_assets = [asset for asset in scene.foreground_assets
+                                if np.max(asset.metadata["visibility"]) > 0]
+    visible_foreground_assets = sorted(  # sort assets by their visibility
+        visible_foreground_assets,
+        key=lambda asset: np.sum(asset.metadata["visibility"]),
+        reverse=True)
+
+    kb.post_processing.compute_bboxes(frames_dict["segmentation"],
+                                    visible_foreground_assets)
 
     # === Saving frames ===
     print(f"💾 Salvataggio frame per seq{seq_id}...")
@@ -344,7 +338,7 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
             with open(base_dir / "fps.txt", "w") as f:
                 f.write(str(scene.frame_rate))
 
-    
+
     # === Metadata ===
     exclude_names = {"floor", "camera", "sun"}
     scene_objects = [obj for obj in scene.assets if obj.name not in exclude_names]
@@ -458,15 +452,15 @@ def main():
     print("Cameras:", camera_positions)
     print("Colors:", light_colors)
 
-    
+
     # Use output_root from arguments
     output_root = args.output_root
-    
+
     seq_id = 0
-    
+
     for shape_class in classes:
         shape_ids = chooseClass(shape_class)
-        
+
         for intensity in light_levels:
             for orient_name, orientation in light_orientations.items():
                 for cam_name, cam_pos in camera_positions.items():
@@ -484,13 +478,13 @@ def main():
         global MIN_STATIC, MAX_STATIC, MIN_DYNAMIC, MAX_DYNAMIC
         MIN_STATIC, MAX_STATIC = 1, 2
         MIN_DYNAMIC, MAX_DYNAMIC = 1, 2
-        
+
         # Generate 10 additional sequences with random parameters
         for i in range(1):
             # Random shape selection
             random_class = Random.choice(classes_all)
             shape_ids = chooseClass(random_class)
-            
+
             # Random light parameters
             intensity = Random.choice(light_levels_all)
             orient_name, orientation = Random.choice(list(light_orientations_all.items()))
