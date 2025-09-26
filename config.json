@@ -1,6 +1,6 @@
 {
-    "classes": ["airplane"],
-    "light_levels": [1.0,0.5, 0.25],
+    "classes": ["airplane", "birdhouse",  "pillow"],
+    "light_levels": [0.25, 0.5],
     "light_orientations": {
         "side_45": [0.0, 0.0, 0.78539]
     },

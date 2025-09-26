@@ -164,12 +164,16 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
 
     scene, rng, output_dir, scratch_dir = kb.setup(FLAGS)
 
+    scene.pass_render_denoising_data = True
     renderer = KubricBlender(scene, use_denoising=True, samples_per_pixel=64)
     simulator = KubricSimulator(scene)    
 
+    renderer.denoiser = 'OPENIMAGEDENOISE'
+    renderer.samples = 512
+
     #--- Scene background HDRI ---
-    #hdri_id = selector.pick(light_intensity)
-    hdri_id = "muddy_autumn_forest"
+    hdri_id = selector.pick(light_intensity)
+    #hdri_id = "muddy_autumn_forest"
     print(f"🌅 Using HDRI: {hdri_id}")
     background_hdri = HDRI_SOURCE.create(asset_id=hdri_id)
 
@@ -295,10 +299,6 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
     print("🎥 Rendering...")
     frames_dict = renderer.render()
 
-
-
-    # === Post-processing ===
-    print("🎞️ Post-processing...")
 
     # --- Calcola visibilità e aggiusta segmentation ---
     kb.compute_visibility(frames_dict["segmentation"], scene.assets)

@@ -1,5 +1,4 @@
 import torch
-import matplotlib.pyplot as plt
 import numpy as np
 import glob
 import cv2
@@ -9,7 +8,7 @@ import tqdm
 import esim_torch
 
 
-def generate_events(input_dir, output_file, contrast_threshold_neg=0.2, contrast_threshold_pos=0.2, refractory_period_ns=0):
+def generate_events(input_dir, output_file, contrast_threshold_neg=0.2, contrast_threshold_pos=0.2, refractory_period_ns=0):     
     esim = esim_torch.ESIM(contrast_threshold_neg=contrast_threshold_neg,
                             contrast_threshold_pos=contrast_threshold_pos,
                             refractory_period_ns=refractory_period_ns)
@@ -22,14 +21,16 @@ def generate_events(input_dir, output_file, contrast_threshold_neg=0.2, contrast
     log_images = np.log(images.astype("float32") / 255 + 1e-4)
 
     # generate torch tensors
-    device = "cuda:0"
+    # generate torch tensors - esim_torch requires CUDA tensors
+    
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    print(torch.cuda.is_available())
     log_images = torch.from_numpy(log_images).to(device)
     timestamps_ns = torch.from_numpy(timestamps_ns).to(device)
 
     # generate events with GPU support
 
     events = esim.forward(log_images, timestamps_ns)
-
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
     np.savez_compressed(output_file,
                         x=events['x'].cpu().numpy(),
