@@ -1,6 +1,6 @@
 {
-    "classes": ["airplane", "birdhouse",  "pillow"],
-    "light_levels": [0.25, 0.5],
+    "classes": ["airplane"],
+    "light_levels": [1.0],
     "light_orientations": {
         "side_45": [0.0, 0.0, 0.78539]
     },
@@ -17,5 +17,7 @@
     "resolution": "256x256",
     "frame_end": 24,
     "frame_rate": 12,
-    "step_rate": 240
+    "step_rate": 240,
+    "camera_mode": "panning",
+    "max_camera_movement": 4.0
 }
