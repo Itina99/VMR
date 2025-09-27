@@ -18,7 +18,7 @@ def generate_events(input_dir, output_file, contrast_threshold_neg=0.2, contrast
     timestamps_s = np.genfromtxt(f"{input_dir}/timestamps.txt")
     timestamps_ns = (timestamps_s * 1e9).astype("int64")
 
-    log_images = np.log(images.astype("float32") / 255 + 1e-4)
+    log_images = np.log(images.astype("float32") / 255 + 1e-5)
 
     # generate torch tensors
     # generate torch tensors - esim_torch requires CUDA tensors

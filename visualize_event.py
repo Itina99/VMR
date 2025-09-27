@@ -45,18 +45,20 @@ def visualize_events(npz_path, resolution=(256, 256), dt_ns=1e6):
 
         # Mostra la finestra
         cv2.imshow("Event Visu still have it forfeited.alization", canvas)
-        key = cv2.waitKey(1)
+        key = cv2.waitKey(33)
         if key == 27:  # ESC per uscire
             break
 
         current_time += dt_ns
+        idx += 1
 
+    print(idx)
     cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
-    npz_file = "output/events/seq0.npz"
+    npz_file = "output/events/seq5.npz"
     if not os.path.exists(npz_file):
         print(f"File {npz_file} non trovato.")
     else:
-        visualize_events(npz_file, resolution=(256, 256), dt_ns=1e6)
+        visualize_events(npz_file, resolution=(256, 256), dt_ns=33e6)
