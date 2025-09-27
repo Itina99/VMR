@@ -52,7 +52,8 @@ writer_map = {
     "object_coordinates": write_coordinates_batch,
 }
 
-# Parametri di base
+# Parametri di base 
+#TODO: TOGLIERLI DA QUI DATO CHE SONO NEL PARSER
 RESOLUTION = (256, 256)
 FRAME_END = 24
 FRAME_RATE = 12
@@ -124,6 +125,48 @@ print(f"✅ HDRI: {len(HDRI_SOURCE._assets)} mappe caricate")
 print(f"✅ KuBasic asset disponibili")
 
 
+
+
+# ============================================================
+# --- cAMERA MOVEMENT FUNCTIONS---
+# ============================================================
+
+def get_linear_camera_motion_start_end(
+    movement_speed: float,
+    inner_radius: float = 7.,
+    outer_radius: float = 9.,
+    z_offset: float = 0.1,
+):
+    """Sample a linear path which starts and ends within a half-sphere shell."""
+    while True:
+        camera_start = np.array(kb.sample_point_in_half_sphere_shell(
+            inner_radius, outer_radius, z_offset))
+        direction = Random.random() * 3 - 0.5
+        movement = direction / np.linalg.norm(direction) * movement_speed
+        camera_end = camera_start + movement
+        if (inner_radius <= np.linalg.norm(camera_end) <= outer_radius and
+                camera_end[2] > z_offset):
+            return camera_start, camera_end
+
+def get_linear_lookat_motion_start_end(
+    inner_radius: float = 0.5,
+    outer_radius: float = 2.0,
+):
+    """Sample a linear path for the look-at point."""
+    while True:
+        camera_through = np.array(
+            kb.sample_point_in_half_sphere_shell(0.0, inner_radius, 0.0))
+        while True:
+            camera_start = np.array(
+                kb.sample_point_in_half_sphere_shell(0.0, outer_radius, 0.0))
+            if camera_start[-1] < inner_radius:
+                break
+        continuation = Random.random() * 0.5
+        camera_end = camera_through + continuation * (camera_through - camera_start)
+        if Random.random() < 0.5:
+            camera_start, camera_end = camera_end, camera_start
+        return camera_start, camera_end
+
 # ============================================================
 # --- PARSING DATI ---
 # ============================================================
@@ -152,6 +195,8 @@ def parse_args():
     #other args by default
     parser.add_argument("--friction", type=float, default=1.0)
     parser.add_argument("--restitution", type=float, default=0.0)
+    parser.add_argument("--camera_mode", type=str, choices=["fixed", "linear_movement", "panning"], default="fixed")
+    parser.add_argument("--max_camera_movement", type=float, default=4.0)
 
     return parser.parse_args()
 
@@ -164,12 +209,9 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
 
     scene, rng, output_dir, scratch_dir = kb.setup(FLAGS)
 
-    scene.pass_render_denoising_data = True
     renderer = KubricBlender(scene, use_denoising=True, samples_per_pixel=64)
     simulator = KubricSimulator(scene)    
 
-    renderer.denoiser = 'OPENIMAGEDENOISE'
-    renderer.samples = 512
 
     #--- Scene background HDRI ---
     hdri_id = selector.pick(light_intensity)
@@ -241,10 +283,49 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
             for dest_socket in original_destinations:
                 node_tree.links.new(node_tree.nodes["Vector Math"].outputs["Vector"], dest_socket)
 
+    
+    
     # --- Camera ---
+    camera_mode = FLAGS.camera_mode
+    max_camera_speed = FLAGS.max_camera_movement
+    logging.info(f"🎥 Setting up Camera in '{camera_mode}' mode...")
+    print(f"🎥 Setting up Camera in '{FLAGS.camera_mode}' mode...")
+
     scene.camera = kb.PerspectiveCamera(name="camera", focal_length=35., sensor_width=32)
-    scene.camera.position = camera_position
-    scene.camera.look_at((0, 0, 0))
+
+    if camera_mode == "fixed":
+        scene.camera.position = kb.sample_point_in_half_sphere_shell(
+            inner_radius=7., outer_radius=9., offset=0.1)
+        scene.camera.look_at((0, 0, 0))
+        logging.info(f"Camera position fixed at {scene.camera.position}")
+
+    elif camera_mode == "linear_movement":
+        # Calcola una velocità casuale per questo movimento
+        speed = rng.uniform(0., max_camera_speed)
+        camera_start, camera_end = get_linear_camera_motion_start_end(movement_speed=speed)
+        logging.info(f"Camera will move from {camera_start} to {camera_end} with speed {speed:.2f}")
+
+        for frame in range(scene.frame_start, scene.frame_end + 1):
+            interp = (frame - scene.frame_start) / (scene.frame_end - scene.frame_start)
+            scene.camera.position = (1 - interp) * camera_start + interp * camera_end
+            scene.camera.look_at((0, 0, 0))
+            scene.camera.keyframe_insert("position", frame)
+            scene.camera.keyframe_insert("quaternion", frame)
+
+    elif camera_mode == "panning":
+        speed = rng.uniform(0., max_camera_speed)
+        camera_start, camera_end = get_linear_camera_motion_start_end(movement_speed=speed)
+        lookat_start, lookat_end = get_linear_lookat_motion_start_end()
+        logging.info(f"Camera will move from {camera_start} to {camera_end} with speed {speed:.2f}")
+        logging.info(f"Camera will pan from {lookat_start} to {lookat_end}")
+
+        for frame in range(scene.frame_start, scene.frame_end + 1):
+            interp = (frame - scene.frame_start) / (scene.frame_end - scene.frame_start)
+            scene.camera.position = (1 - interp) * camera_start + interp * camera_end
+            scene.camera.look_at((1 - interp) * lookat_start + interp * lookat_end)
+            scene.camera.keyframe_insert("position", frame)
+            scene.camera.keyframe_insert("quaternion", frame)
+
 
 
 

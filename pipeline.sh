@@ -22,6 +22,8 @@ if [ -f "$CONFIG_FILE" ]; then
     FRAME_END=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); print(c.get('frame_end', 24))")
     FRAME_RATE=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); print(c.get('frame_rate', 12))")
     STEP_RATE=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); print(c.get('step_rate', 240))")
+    CAMERA_MODE=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); print(c.get('camera_mode', 'fixed'))")
+    MAX_CAMERA_MOVEMENT=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); print(c.get('max_camera_movement', 4.0))")
 echo "📋 Configurazioni caricate da $CONFIG_FILE"
 else
     echo "⚠️  File di configurazione $CONFIG_FILE non trovato, uso valori di default"
@@ -34,6 +36,8 @@ else
     FRAME_END="24"
     FRAME_RATE="12"
     STEP_RATE="240"
+    CAMERA_MODE="fixed"
+    MAX_CAMERA_MOVEMENT="4.0"
 fi
 
 
@@ -81,32 +85,36 @@ if [ "$SIMULATION_TYPE" = "shapenet" ]; then
             --resolution $RESOLUTION \
             --frame_end $FRAME_END \
             --frame_rate $FRAME_RATE \
-            --step_rate $STEP_RATE
+            --step_rate $STEP_RATE \
+            --camera_mode $CAMERA_MODE \
+            --max_camera_movement $MAX_CAMERA_MOVEMENT
 fi
 
-echo "🧹 Pulizia background immagini..."
-python clean_background.py --rgb_dir output/rgb --seg_dir output/segmentation --output_dir output/cleaned_rgb
-echo "✅ Background cleaning completato"
+# # ========== BACKGROUND CLEANING ==========
+# # Remove background from RGB images using segmentation masks
+# echo "🧹 Pulizia background immagini..."
+# python clean_background.py --rgb_dir output/rgb --seg_dir output/segmentation --output_dir output/cleaned_rgb
+# echo "✅ Background cleaning completato"
 
+# # ========== 2. CLEANUP OUTPUT ==========
+# # Remove existing upsampled directory if it exists to ensure clean output
+# if [ -d "$UPSAMPLED_DIR" ]; then
+#     echo "🧹 Pulizia directory esistente: $UPSAMPLED_DIR"
+#     rm -rf "$UPSAMPLED_DIR"
+# fi
 
-# ========== 2. CLEANUP OUTPUT ==========
-# Remove existing upsampled directory if it exists
-if [ -d "$UPSAMPLED_DIR" ]; then
-    echo "🧹 Pulizia directory esistente: $UPSAMPLED_DIR"
-    rm -rf "$UPSAMPLED_DIR"
-fi
+# # ========== 3. UPSAMPLING AND EVENT GENERATION ==========
+# # Generate upsampled frames from simulation output to increase temporal resolution
+# echo "⚡ Generazione eventi e upsampling..."
+# python3 upsample_frames.py --input_dir "$OUTPUT_DIR" --output_dir "$UPSAMPLED_DIR"
 
-# ========== 3. UPSAMPLING AND EVENT GENERATION ==========
-# Generate upsampled frames from simulation output
-echo "⚡ Generazione eventi e upsampling..."
-python3 upsample_frames.py --input_dir "$OUTPUT_DIR" --output_dir "$UPSAMPLED_DIR"
+# # Generate event data from upsampled RGB frames
+# echo "✅ Pulizia completata. Generazione eventi..."
+# python3 event_generation.py --input_dir "$UPSAMPLED_DIR" --output_dir "$EVENTS_DIR"
 
-# Generate events from upsampled frames
-echo "✅ Pulizia completata. Generazione eventi..."
-python3 event_generation.py --input_dir "$UPSAMPLED_DIR" --output_dir "$EVENTS_DIR"
+# # Create GIF animations from NPZ event data for visualization
+# echo "🎬 Generazione gif eventi..."
+# python3 npz_to_gif.py
 
-# Create GIF animations from event data
-echo "🎬 Generazione gif eventi..."
-python3 npz_to_gif.py
-
-echo "✅ Pipeline completata!"
+# # Pipeline execution completed successfully
+# echo "✅ Pipeline completata!"
