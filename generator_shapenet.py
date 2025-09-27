@@ -278,6 +278,8 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
     num_dynamic = rng.randint(MIN_DYNAMIC, MAX_DYNAMIC + 1)
     print(f"🚀 Generating {num_dynamic} dynamic objects...")
     for idx in range(num_dynamic):
+        random_class = Random.choice(classes_all)
+        shape_ids = chooseClass(random_class)
         shape_id = rng.choice(shape_ids)
         obj = ASSET_SOURCE.create(shape_id)
         obj.segmentation_id = num_static + idx + 1  # Unique ID
