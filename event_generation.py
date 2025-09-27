@@ -23,8 +23,7 @@ def generate_events(input_dir, output_file, contrast_threshold_neg=0.2, contrast
     # generate torch tensors
     # generate torch tensors - esim_torch requires CUDA tensors
     
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    print(torch.cuda.is_available())
+    device = "cuda:0" 
     log_images = torch.from_numpy(log_images).to(device)
     timestamps_ns = torch.from_numpy(timestamps_ns).to(device)
 
@@ -49,7 +48,7 @@ def main():
     for subdir in progress_bar:
         input_dir = os.path.join(upsampled_rgb_dir, subdir)
         output_file = f"output/events/{subdir}.npz"
-        progress_bar.set_description(f"Processing {subdir}")
+        progress_bar.set_description(f"Processing upsampled sequences")
         generate_events(input_dir, output_file)
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ from tqdm import tqdm
 import argparse
 import shutil
 
-def replace_background(rgb_frame, segmentation_mask, color=[128, 128, 128]):
+def replace_background(rgb_frame, segmentation_mask, color=[255, 0, 255]):
     """
     Sostituisce lo sfondo di un'immagine con un colore solido.
 
@@ -95,7 +95,7 @@ if __name__ == "__main__":
     parser.add_argument("--rgb_dir", type=str, required=True, help="Cartella principale delle sequenze RGB.")
     parser.add_argument("--seg_dir", type=str, required=True, help="Cartella principale delle sequenze di segmentazione.")
     parser.add_argument("--output_dir", type=str, required=True, help="Cartella dove salvare le nuove sequenze.")
-    parser.add_argument("--color", type=int, nargs=3, default=[128, 128, 128], help="Colore di sfondo in B G R (es. --color 0 0 0 per nero). Default: grigio 128.")
+    parser.add_argument("--color", type=int, nargs=3, default=[255, 0, 255], help="Colore di sfondo in B G R (es. --color 0 0 0 per nero). Default: grigio 128.")
     
     args = parser.parse_args()
 

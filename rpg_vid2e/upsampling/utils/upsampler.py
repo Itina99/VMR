@@ -98,7 +98,7 @@ class Upsampler:
         assert os.path.isdir(imgs_dir)
         img = np.clip(img * 255, 0, 255).astype("uint8")
         path = os.path.join(imgs_dir, "%08d.png" % idx)
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        #img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         cv2.imwrite(path, img)
 
     @staticmethod
