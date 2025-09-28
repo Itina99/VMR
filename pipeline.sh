@@ -61,7 +61,7 @@ CURRENT_DIR=$(pwd)
 # ========== ATTIVAZIONE AMBIENTE CONDA ==========
 echo "🔧 Attivazione ambiente conda 'vid2e'..."
 source $(conda info --base)/etc/profile.d/conda.sh
-conda activate vid2e
+conda activate vid2eUps
 echo "✅ Ambiente conda 'vid2e' attivato"
 echo ""
 # ========== 1. SIMULAZIONE ==========
@@ -90,31 +90,32 @@ if [ "$SIMULATION_TYPE" = "shapenet" ]; then
             --max_camera_movement $MAX_CAMERA_MOVEMENT
 fi
 
-# # ========== BACKGROUND CLEANING ==========
-# # Remove background from RGB images using segmentation masks
-# echo "🧹 Pulizia background immagini..."
-# python clean_background.py --rgb_dir output/rgb --seg_dir output/segmentation --output_dir output/cleaned_rgb
-# echo "✅ Background cleaning completato"
+# ========== BACKGROUND CLEANING ==========
+# Remove background from RGB images using segmentation masks
+echo "🧹 Pulizia background immagini..."
+python clean_background.py --rgb_dir output/rgb --seg_dir output/segmentation --output_dir output/cleaned_rgb
+echo "✅ Background cleaning completato"
 
-# # ========== 2. CLEANUP OUTPUT ==========
-# # Remove existing upsampled directory if it exists to ensure clean output
-# if [ -d "$UPSAMPLED_DIR" ]; then
-#     echo "🧹 Pulizia directory esistente: $UPSAMPLED_DIR"
-#     rm -rf "$UPSAMPLED_DIR"
-# fi
+# ========== 2. CLEANUP OUTPUT ==========
+# Remove existing upsampled directory if it exists to ensure clean output
+if [ -d "$UPSAMPLED_DIR" ]; then
+    echo "🧹 Pulizia directory esistente: $UPSAMPLED_DIR"
+    rm -rf "$UPSAMPLED_DIR"
+fi
 
-# # ========== 3. UPSAMPLING AND EVENT GENERATION ==========
-# # Generate upsampled frames from simulation output to increase temporal resolution
-# echo "⚡ Generazione eventi e upsampling..."
-# python3 upsample_frames.py --input_dir "$OUTPUT_DIR" --output_dir "$UPSAMPLED_DIR"
+# ========== 3. UPSAMPLING AND EVENT GENERATION ==========
+# Generate upsampled frames from simulation output to increase temporal resolution
+echo "⚡ Generazione eventi e upsampling..."
+python3 upsample_frames.py --input_dir "$OUTPUT_DIR" --output_dir "$UPSAMPLED_DIR"
 
-# # Generate event data from upsampled RGB frames
-# echo "✅ Pulizia completata. Generazione eventi..."
-# python3 event_generation.py --input_dir "$UPSAMPLED_DIR" --output_dir "$EVENTS_DIR"
+conda activate vid2e
+# Generate event data from upsampled RGB frames
+echo "✅ Pulizia completata. Generazione eventi..."
+python3 event_generation.py --input_dir "$UPSAMPLED_DIR" --output_dir "$EVENTS_DIR"
 
-# # Create GIF animations from NPZ event data for visualization
-# echo "🎬 Generazione gif eventi..."
-# python3 npz_to_gif.py
+# Create GIF animations from NPZ event data for visualization
+echo "🎬 Generazione gif eventi..."
+python3 npz_to_gif.py
 
-# # Pipeline execution completed successfully
-# echo "✅ Pipeline completata!"
+# Pipeline execution completed successfully
+echo "✅ Pipeline completata!"
