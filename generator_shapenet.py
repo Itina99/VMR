@@ -28,6 +28,7 @@ import random as Random
 import bmesh
 from HDRISelector import HDRISelector
 from mathutils import Vector
+from datetime import datetime
 
 
 
@@ -199,6 +200,92 @@ def parse_args():
     parser.add_argument("--max_camera_movement", type=float, default=4.0)
 
     return parser.parse_args()
+
+
+
+# ============================================================
+# --- COCO Style Annotations ---       
+# ============================================================
+# La funzione initialize_coco_dict() rimane la stessa
+def initialize_coco_dict():
+    """Crea la struttura di base, vuota, di un file di annotazioni COCO."""
+    return {
+        "info": { "year": datetime.now().year, "version": "1.0", "description": "Dataset simulato con Kubric", "contributor": "Matteo Tinacci" },
+        "licenses": [], "categories": [], "images": [], "annotations": []
+    }
+
+def update_coco_from_metadata(coco_dict, kubric_metadata, seq_id, annotation_id, image_id):
+    """
+    Usa la struttura dati REALE (una lista di oggetti con chiave "bbox")
+    per aggiornare il dizionario COCO.
+    """
+    # --- 1. Gestione Categorie ---
+    # kubric_metadata["object"] è una LISTA.
+    objects_metadata_list = kubric_metadata["object"]
+    existing_categories = {cat['name']: cat['id'] for cat in coco_dict['categories']}
+
+    # Iteriamo direttamente sulla LISTA.
+    for obj_info in objects_metadata_list:
+        category_name = obj_info["asset_id"]
+        if category_name not in existing_categories:
+            category_id = len(existing_categories) + 1
+            coco_dict['categories'].append({
+                "id": category_id,
+                "name": category_name,
+                "supercategory": "oggetto_simulato"
+            })
+            existing_categories[category_name] = category_id
+    
+    # --- 2. Gestione Immagini e Annotazioni ---
+    scene_info = kubric_metadata["scene_metadata"]
+    num_frames = scene_info["num_frames"]
+    height, width = scene_info["resolution"]
+    
+    # Debug: print metadata structure info
+    print(f"📊 Processing {len(objects_metadata_list)} objects for {num_frames} frames")
+    for i, obj_info in enumerate(objects_metadata_list):
+        vis_len = len(obj_info["visibility"]) if "visibility" in obj_info else 0
+        bbox_len = len(obj_info["bboxes"]) if "bboxes" in obj_info else 0
+        print(f"  Object {i}: visibility={vis_len}, bboxes={bbox_len} frames")
+    
+    for frame_idx in range(num_frames):
+        current_image_id = image_id + frame_idx
+        image_info = {
+            "id": current_image_id,
+            "file_name": f"seq{seq_id}/imgs/{frame_idx:05d}.png", 
+            "width": width,
+            "height": height
+        }
+        coco_dict['images'].append(image_info)
+        
+        # Iteriamo di nuovo sulla LISTA di oggetti.
+        for obj_info in objects_metadata_list:
+            # Check if frame_idx is within bounds of the visibility and bboxes arrays
+            if (frame_idx < len(obj_info["visibility"]) and 
+                frame_idx < len(obj_info["bboxes"]) and
+                obj_info["visibility"][frame_idx] > 0):
+                # La chiave corretta è "bboxes" (PLURALE).
+                bbox = obj_info["bboxes"][frame_idx]
+                
+                ymin, xmin, ymax, xmax = bbox
+                coco_bbox = [float(xmin), float(ymin), float(xmax - xmin), float(ymax - ymin)]
+                area = float((xmax - xmin) * (ymax - ymin))
+
+                annotation_info = {
+                    "id": annotation_id,
+                    "image_id": current_image_id,
+                    "category_id": existing_categories[obj_info["asset_id"]],
+                    "bbox": coco_bbox,
+                    "area": area,
+                    "iscrowd": 0,
+                    "segmentation": [] 
+                }
+                coco_dict['annotations'].append(annotation_info)
+                annotation_id += 1
+            
+    next_image_id = image_id + num_frames
+    
+    return coco_dict, annotation_id, next_image_id
 
 
 # ============================================================
@@ -373,7 +460,7 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
 
     # === Simulation ===
     print("🎬 Simulazione...")
-    animation, collisions = simulator.run(frame_start=0, frame_end=scene.frame_end + 1)
+    animation, collisions = simulator.run(frame_start=0, frame_end=scene.frame_end)
 
 
     # === Rendering ===
@@ -423,18 +510,19 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
 
 
     # === Metadata ===
-    exclude_names = {"floor", "camera", "sun"}
+    exclude_names = {"floor", "camera", "sun", "dome"}
     scene_objects = [obj for obj in scene.assets if obj.name not in exclude_names]
     data = {
         "scene_metadata": kb.get_scene_metadata(scene),
         "camera": kb.get_camera_info(scene.camera),
         "object": kb.get_instance_info(scene, scene_objects)
     }
-    annotations_dir = output_root / "annotations"
-    annotations_dir.mkdir(parents=True, exist_ok=True)
-    metadata_path = annotations_dir / f"seq{seq_id}_metadata.json"
-    kb.file_io.write_json(filename=metadata_path, data=data)
+    """     annotations_dir = output_root / "annotations"
+        annotations_dir.mkdir(parents=True, exist_ok=True)
+        metadata_path = annotations_dir / f"seq{seq_id}_metadata.json"
+        kb.file_io.write_json(filename=metadata_path, data=data) """
     gc.collect()  # Garbage collection to free memory
+    return data  # Return metadata for COCO update
 
 
 # ============================================================
@@ -540,6 +628,9 @@ def main():
     output_root = args.output_root
 
     seq_id = 0
+    coco_data = initialize_coco_dict()
+    annotation_id_counter = 1
+    image_id_counter = 1
 
     for shape_class in classes:
         shape_ids = chooseClass(shape_class)
@@ -549,8 +640,14 @@ def main():
                 for cam_name, cam_pos in camera_positions.items():
                     for color_name, color_value in light_colors.items():
                         print(f"\n🚀 Generazione sequenza {seq_id} | shape={shape_class} | light={int(intensity*100)}% | orient={orient_name} | cam={cam_name} | color={color_name}")
-                        generate_sequence(seq_id, shape_ids, intensity, orientation, cam_pos, color_value, args, output_root)
+                        kubric_metadata = generate_sequence(seq_id, shape_ids, intensity, orientation, cam_pos, color_value, args, output_root)
+                                            # 4. Aggiorna il dizionario COCO con i nuovi dati
+                        coco_data, annotation_id_counter, image_id_counter = update_coco_from_metadata(coco_data, kubric_metadata, seq_id, annotation_id_counter, image_id_counter)
                         seq_id += 1
+
+    annotations_path = output_root / "annotations.json"
+    kb.file_io.write_json(filename=annotations_path, data=coco_data)
+    print(f"\n✅ Annotazioni COCO salvate in: '{annotations_path}'")
     print("\n✅ Tutte le sequenze sono state generate.")
 
     # Generate additional sequences with multiple objects and random parameters if enabled
