@@ -300,48 +300,50 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
     simulator = KubricSimulator(scene)    
 
 
+    # --- Ipotizziamo che le tue variabili siano definite qui ---
+    # Esempio: light_intensity = 0.8
+    # Esempio: light_color = (1.0, 0.8, 0.6) # Luce calda
+
     #--- Scene background HDRI ---
     hdri_id = selector.pick(light_intensity)
-    #hdri_id = "muddy_autumn_forest"
     print(f"🌅 Using HDRI: {hdri_id}")
     background_hdri = HDRI_SOURCE.create(asset_id=hdri_id)
-
-
     scene.metadata["background"] = hdri_id
 
-    # --- Usa la tua variabile 'light_intensity'
+    # --- Usa le tue variabili 'light_intensity' e 'light_color' ---
     logging.info(f"Using light intensity: {light_intensity:.2f}")
+    logging.info(f"Using light color: {light_color}")
 
     # --- CALIBRAZIONE DELLA LUMINOSITÀ ---
     LIGHT_SOURCE_GAMMA = 1.0
     light_source_intensity = light_intensity ** LIGHT_SOURCE_GAMMA
-
     BACKGROUND_GAMMA = 1.0
     background_visual_intensity = light_intensity ** BACKGROUND_GAMMA
-
-    # Potenziometro per la luce ambientale di riempimento. Prova a partire con un valore basso.
     AMBIENT_LIGHT_FACTOR = 0.8
-
     print(f"INFO: Intensità luce: {light_source_intensity:.4f} | Intensità sfondo: {background_visual_intensity:.4f} | Luce ambiente: {AMBIENT_LIGHT_FACTOR}")
 
-    # --- SOLUZIONE SEMPLIFICATA: Usiamo la luce del Mondo di Blender come riempimento ---
+    # --- Luce ambientale del Mondo di Blender ---
     world_background_node = bpy.context.scene.world.node_tree.nodes.get("Background")
     if world_background_node:
-        # Impostiamo un colore neutro per la luce ambientale (bianco)
-        world_background_node.inputs["Color"].default_value = (1, 1, 1, 1)
-        # Controlliamo la sua POTENZA (Strength) con il nostro potenziometro e l'intensità generale
+        # Usiamo direttamente la variabile light_color, che dovrebbe essere un RGBA
+        world_background_node.inputs["Color"].default_value = light_color
         world_background_node.inputs["Strength"].default_value = AMBIENT_LIGHT_FACTOR * light_intensity
-        print("INFO: Luce ambientale del Mondo configurata.")
+        print("INFO: Luce ambientale del Mondo configurata con colore personalizzato.")
 
-    # --- Aggiungiamo un Sole
+    # --- Aggiungiamo un Sole ---
     SUN_BASE_INTENSITY = 0.5
-    sun = kb.DirectionalLight(name="sun", position=(-1, -1, 3.0), look_at=(0, 0, 0), intensity=SUN_BASE_INTENSITY*light_source_intensity)
-
+    sun = kb.DirectionalLight(
+        name="sun",
+        position=(-1, -1, 3.0),
+        look_at=(0, 0, 0),
+        # Forniamo solo i primi 3 componenti (RGB)
+        color=light_color[:3],
+        intensity=SUN_BASE_INTENSITY * light_source_intensity
+    )
     scene.add(sun)
+    print("INFO: Luce del Sole configurata con colore personalizzato.")
 
-
-
-    # --- Dome dello sfondo (il codice rimane identico) ---
+    # --- Dome dello sfondo ---
     dome = KUBASIC_SOURCE.create(asset_id="dome", name="dome", static=True, background=True)
     scene += dome
     dome_blender = dome.linked_objects[renderer]
@@ -362,7 +364,13 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
 
             color_dimmer_node = node_tree.nodes.new(type='ShaderNodeVectorMath')
             color_dimmer_node.operation = 'MULTIPLY'
-            bg_vec = (background_visual_intensity, background_visual_intensity, background_visual_intensity)
+
+            # --- MODIFICA CHIAVE ---
+            # Creiamo un nuovo vettore che combina il colore e l'intensità dello sfondo.
+            # Moltiplichiamo ogni componente di light_color per l'intensità.
+            bg_vec = [c * background_visual_intensity for c in light_color[:3]]
+            # -------------------------
+
             color_dimmer_node.inputs[1].default_value = bg_vec
 
             node_tree.links.new(texture_node.outputs["Color"], color_dimmer_node.inputs[0])
@@ -381,8 +389,8 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
     scene.camera = kb.PerspectiveCamera(name="camera", focal_length=35., sensor_width=32)
 
     if camera_mode == "fixed":
-        scene.camera.position = kb.sample_point_in_half_sphere_shell(
-            inner_radius=7., outer_radius=9., offset=0.1)
+        #scene.camera.position = kb.sample_point_in_half_sphere_shell(inner_radius=7., outer_radius=9., offset=0.1)
+        scene.camera.position = camera_position
         scene.camera.look_at((0, 0, 0))
         logging.info(f"Camera position fixed at {scene.camera.position}")
 
