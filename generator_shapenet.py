@@ -25,10 +25,9 @@ from pathlib import Path
 import json
 from collections import defaultdict
 import random as Random
-import bmesh
 from HDRISelector import HDRISelector
-from mathutils import Vector
 from datetime import datetime
+import time
 
 
 
@@ -37,7 +36,7 @@ from datetime import datetime
 # --- CONFIGURAZIONE GLOBALE ---
 # ============================================================
 
-logging.basicConfig(level="WARNING")
+logging.basicConfig(level="INFO")
 os.environ["KUBRIC_USE_GPU"] = "1"
 
 writer_map = {
@@ -59,10 +58,10 @@ RESOLUTION = (256, 256)
 FRAME_END = 24
 FRAME_RATE = 12
 STEP_RATE = 240
-MIN_STATIC, MAX_STATIC = 1, 3
-MIN_DYNAMIC, MAX_DYNAMIC = 1, 4
-SPAWN_REGION_STATIC = [[-3, -3, 0], [3, 3, 5]]
-SPAWN_REGION_DYNAMIC = [[-3, -3, 1], [3, 3, 5]]
+MIN_STATIC, MAX_STATIC = 1, 2
+MIN_DYNAMIC, MAX_DYNAMIC = 1, 2
+SPAWN_REGION_STATIC = [[-5, -5, 0], [5, 5, 0]]
+SPAWN_REGION_DYNAMIC = [[-5, -5, 1], [5, 5, 6]]
 VELOCITY_RANGE = [(-4., -4., 0.), (4., 4., 0.)]
 CAMERA_TYPES = ["fixed_random", "linear_movement", "linear_movement_linear_lookat"]
 MAX_CAMERA_MOVEMENT = 4.0
@@ -173,8 +172,6 @@ def get_linear_lookat_motion_start_end(
 # ============================================================
 
 
-
-
 def parse_args():
     parser = kb.ArgumentParser()
     """     parser.set_defaults(
@@ -184,7 +181,7 @@ def parse_args():
             step_rate=STEP_RATE,
         ) """
 
-    parser.add_argument("--classes", nargs="+", default=["airplane", "display", "earphone", "faucet", "microphone"])
+    parser.add_argument("--sequences",type=int, default=5)
     parser.add_argument("--light_levels", nargs="+", type=float, default=[1.0])
     # pattern = nome seguito da 3 o 4 float
     parser.add_argument("--light_orientations", nargs="+", default=["side_45", "0.0", "0.0", "0.7854"])
@@ -260,25 +257,74 @@ def update_coco_from_metadata(coco_dict, kubric_metadata, seq_id, annotation_id,
         
         # Iteriamo di nuovo sulla LISTA di oggetti.
         for obj_info in objects_metadata_list:
-            # Check if frame_idx is within bounds of the visibility and bboxes arrays
-            if (frame_idx < len(obj_info["visibility"]) and 
-                frame_idx < len(obj_info["bboxes"]) and
-                obj_info["visibility"][frame_idx] > 0):
-                # La chiave corretta è "bboxes" (PLURALE).
-                bbox = obj_info["bboxes"][frame_idx]
-                
-                ymin, xmin, ymax, xmax = bbox
-                coco_bbox = [float(xmin), float(ymin), float(xmax - xmin), float(ymax - ymin)]
-                area = float((xmax - xmin) * (ymax - ymin))
-
+            # Check if object has any visibility data or if all visibility values are 0
+            if ("visibility" not in obj_info or 
+                len(obj_info["visibility"]) == 0 or
+                all(vis == 0 for vis in obj_info["visibility"])):
+                # Object never visible - create annotation with zero area bbox
                 annotation_info = {
                     "id": annotation_id,
                     "image_id": current_image_id,
                     "category_id": existing_categories[obj_info["asset_id"]],
-                    "bbox": coco_bbox,
-                    "area": area,
+                    "bbox": [0.0, 0.0, 0.0, 0.0],  # Zero-area bbox for invisible objects
+                    "area": 0.0,
                     "iscrowd": 0,
-                    "segmentation": [] 
+                    "segmentation": [],
+                    "visibility": "not_visible"  # Custom field to mark invisible objects
+                }
+                coco_dict['annotations'].append(annotation_info)
+                annotation_id += 1
+                continue
+                
+            # Check if frame_idx is within bounds and object is visible
+            if (frame_idx < len(obj_info["visibility"]) and 
+                obj_info["visibility"][frame_idx] > 0):
+                
+                # Check if bboxes data exists for this frame
+                if ("bboxes" in obj_info and 
+                    frame_idx < len(obj_info["bboxes"])):
+                    # Object is visible and has bbox data
+                    bbox = obj_info["bboxes"][frame_idx]
+                    ymin, xmin, ymax, xmax = bbox
+                    coco_bbox = [float(xmin), float(ymin), float(xmax - xmin), float(ymax - ymin)]
+                    area = float((xmax - xmin) * (ymax - ymin))
+
+                    annotation_info = {
+                        "id": annotation_id,
+                        "image_id": current_image_id,
+                        "category_id": existing_categories[obj_info["asset_id"]],
+                        "bbox": coco_bbox,
+                        "area": area,
+                        "iscrowd": 0,
+                        "segmentation": []
+                    }
+                    coco_dict['annotations'].append(annotation_info)
+                    annotation_id += 1
+                else:
+                    # Object is marked as visible but no bbox data - create zero bbox
+                    annotation_info = {
+                        "id": annotation_id,
+                        "image_id": current_image_id,
+                        "category_id": existing_categories[obj_info["asset_id"]],
+                        "bbox": [0.0, 0.0, 0.0, 0.0],
+                        "area": 0.0,
+                        "iscrowd": 0,
+                        "segmentation": [],
+                        "visibility": "visible_no_bbox"  # Custom field for debugging
+                    }
+                    coco_dict['annotations'].append(annotation_info)
+                    annotation_id += 1
+            elif frame_idx < len(obj_info["visibility"]):
+                # Object exists in this frame but is not visible
+                annotation_info = {
+                    "id": annotation_id,
+                    "image_id": current_image_id,
+                    "category_id": existing_categories[obj_info["asset_id"]],
+                    "bbox": [0.0, 0.0, 0.0, 0.0],
+                    "area": 0.0,
+                    "iscrowd": 0,
+                    "segmentation": [],
+                    "visibility": "not_visible_frame"  # Custom field to mark frame-specific invisibility
                 }
                 coco_dict['annotations'].append(annotation_info)
                 annotation_id += 1
@@ -292,17 +338,12 @@ def update_coco_from_metadata(coco_dict, kubric_metadata, seq_id, annotation_id,
 # --- FUNZIONE DI GENERAZIONE SEQUENZA ---
 # ============================================================
 
-def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orientation: tuple, camera_position: tuple, light_color: tuple, FLAGS, output_root: Path = Path("output")):
+def generate_sequence(seq_id: int, light_intensity: float, orientation: tuple, camera_position: tuple, light_color: tuple, FLAGS, output_root: Path = Path("output")):
 
     scene, rng, output_dir, scratch_dir = kb.setup(FLAGS)
-
     renderer = KubricBlender(scene, use_denoising=True, samples_per_pixel=64)
-    simulator = KubricSimulator(scene)    
+    simulator = KubricSimulator(scene)
 
-
-    # --- Ipotizziamo che le tue variabili siano definite qui ---
-    # Esempio: light_intensity = 0.8
-    # Esempio: light_color = (1.0, 0.8, 0.6) # Luce calda
 
     #--- Scene background HDRI ---
     hdri_id = selector.pick(light_intensity)
@@ -429,6 +470,8 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
     num_static = rng.randint(MIN_STATIC, MAX_STATIC + 1)
     print(f"📦 Generating {num_static} static objects...")
     for idx in range(num_static):
+        random_class = rng.choice(classes_all)
+        shape_ids = chooseClass(random_class)
         shape_id = rng.choice(shape_ids)
         obj = ASSET_SOURCE.create(shape_id)
         obj.segmentation_id = idx + 1  # Assign segmentation ID
@@ -437,7 +480,7 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
         obj.scale = scale / np.max(obj.bounds[1] - obj.bounds[0])  # Normalize scale
         scene += obj
         kb.move_until_no_overlap(obj, simulator, spawn_region=SPAWN_REGION_STATIC, rng=rng)
-        print(f"📦 Static object {shape_id} at {obj.position}")
+        print(f"📦 Static object {shape_id} at {obj.position} with velocity {obj.velocity}")
 
     print("Simulating to let objects settle...")
     _, _ = simulator.run(frame_start=-100, frame_end=0)
@@ -447,6 +490,7 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
     for obj in scene.foreground_assets:
         if hasattr(obj, "velocity"):
             obj.velocity = (0., 0., 0.)
+            obj.angular_velocity = (0., 0., 0.)
             obj.friction = 0.5
             obj.restitution = 0.5
 
@@ -454,7 +498,7 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
     num_dynamic = rng.randint(MIN_DYNAMIC, MAX_DYNAMIC + 1)
     print(f"🚀 Generating {num_dynamic} dynamic objects...")
     for idx in range(num_dynamic):
-        random_class = Random.choice(classes_all)
+        random_class = rng.choice(classes_all)
         shape_ids = chooseClass(random_class)
         shape_id = rng.choice(shape_ids)
         obj = ASSET_SOURCE.create(shape_id)
@@ -464,7 +508,7 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
         scene += obj
         kb.move_until_no_overlap(obj, simulator, spawn_region=SPAWN_REGION_DYNAMIC, rng=rng)
         obj.velocity = (rng.uniform(*VELOCITY_RANGE) - [obj.position[0], obj.position[1], 0])
-        print(f"🚀 Dynamic object {shape_id} with velocity {obj.velocity}")
+        print(f"🚀 Dynamic object {shape_id} with velocity {obj.velocity} at position {obj.position}")
 
     # === Simulation ===
     print("🎬 Simulazione...")
@@ -525,10 +569,10 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
         "camera": kb.get_camera_info(scene.camera),
         "object": kb.get_instance_info(scene, scene_objects)
     }
-    """     annotations_dir = output_root / "annotations"
-        annotations_dir.mkdir(parents=True, exist_ok=True)
-        metadata_path = annotations_dir / f"seq{seq_id}_metadata.json"
-        kb.file_io.write_json(filename=metadata_path, data=data) """
+    annotations_dir = output_root / "annotations"
+    annotations_dir.mkdir(parents=True, exist_ok=True)
+    metadata_path = annotations_dir / f"seq{seq_id}_metadata.json"
+    kb.file_io.write_json(filename=metadata_path, data=data)
     gc.collect()  # Garbage collection to free memory
     return data  # Return metadata for COCO update
 
@@ -539,6 +583,13 @@ def generate_sequence(seq_id: int, shape_ids: list, light_intensity: float, orie
 def chooseClass(class_name):
     return [name for name, spec in ASSET_SOURCE._assets.items() if spec["metadata"]["category"] == class_name]
 
+# ============================================================
+# --- SET RANDOM SEED ---
+# ============================================================
+
+def get_seed():
+    """Return a random seed for generation."""
+    return int(time.time() * 1000) % 2**32
 
 # ============================================================
 # --- MAIN ---
@@ -547,7 +598,7 @@ def chooseClass(class_name):
 def main():
     args = parse_args()
     print("🎛️  Configurazione in corso...")
-    print("Classes:", args.classes)
+    print("number of sequences:", args.sequences)
     print("Light levels:", args.light_levels)
     print("Orientations:", args.light_orientations)
     print("Cameras:", args.camera_positions)
@@ -573,9 +624,9 @@ def main():
         return [str(x) for x in lst]
 
 
-    # -- classes
-    raw_classes = _normalize_list_arg(args.classes)
-    classes = raw_classes  # già lista di stringhe singole
+    # -- number of sequences
+    num_sequences = args.sequences
+
 
     # -- light_levels
     raw_levels = _normalize_list_arg(args.light_levels)
@@ -625,7 +676,7 @@ def main():
 
 
     print("✅ Config caricate:")
-    print("Classes:", classes)
+    print("number of sequences:", num_sequences)
     print("Light levels:", light_levels)
     print("Orientations:", light_orientations)
     print("Cameras:", camera_positions)
@@ -640,16 +691,19 @@ def main():
     annotation_id_counter = 1
     image_id_counter = 1
 
-    for shape_class in classes:
-        shape_ids = chooseClass(shape_class)
-
+    for seq_batch in range(num_sequences):
+        # Set a seed variable for reproducibility - one seed per batch of all configurations
+        seed = get_seed()
+        args.seed = seed
+        print(f"\n🌟 Starting sequence batch {seq_batch + 1}/{num_sequences} with seed {seed}")
+        
         for intensity in light_levels:
             for orient_name, orientation in light_orientations.items():
                 for cam_name, cam_pos in camera_positions.items():
                     for color_name, color_value in light_colors.items():
-                        print(f"\n🚀 Generazione sequenza {seq_id} | shape={shape_class} | light={int(intensity*100)}% | orient={orient_name} | cam={cam_name} | color={color_name}")
-                        kubric_metadata = generate_sequence(seq_id, shape_ids, intensity, orientation, cam_pos, color_value, args, output_root)
-                                            # 4. Aggiorna il dizionario COCO con i nuovi dati
+                        print(f"\n🚀 Generazione sequenza {seq_id} | batch {seq_batch + 1} | seed {args.seed} | light={int(intensity*100)}% | orient={orient_name} | cam={cam_name} | color={color_name}")
+                        kubric_metadata = generate_sequence(seq_id, intensity, orientation, cam_pos, color_value, args, output_root)
+                        # 4. Aggiorna il dizionario COCO con i nuovi dati
                         coco_data, annotation_id_counter, image_id_counter = update_coco_from_metadata(coco_data, kubric_metadata, seq_id, annotation_id_counter, image_id_counter)
                         seq_id += 1
 
@@ -658,30 +712,34 @@ def main():
     print(f"\n✅ Annotazioni COCO salvate in: '{annotations_path}'")
     print("\n✅ Tutte le sequenze sono state generate.")
 
-    # Generate additional sequences with multiple objects and random parameters if enabled
-    if args.rand_gen:
-        print(f"\n🎲 Generating additional sequences with random multiple objects...")
+    # # Generate additional sequences with multiple objects and random parameters if enabled
+    # if args.rand_gen:
+    #     print(f"\n🎲 Generating additional sequences with random multiple objects...")
 
-        # Modified parameters for multiple objects
-        global MIN_STATIC, MAX_STATIC, MIN_DYNAMIC, MAX_DYNAMIC
-        MIN_STATIC, MAX_STATIC = 1, 2
-        MIN_DYNAMIC, MAX_DYNAMIC = 1, 2
+    #     # Modified parameters for multiple objects
+    #     global MIN_STATIC, MAX_STATIC, MIN_DYNAMIC, MAX_DYNAMIC
+    #     MIN_STATIC, MAX_STATIC = 1, 2
+    #     MIN_DYNAMIC, MAX_DYNAMIC = 1, 2
 
-        # Generate 10 additional sequences with random parameters
-        for i in range(1):
-            # Random shape selection
-            random_class = Random.choice(classes_all)
-            shape_ids = chooseClass(random_class)
+    #     # Generate 10 additional sequences with random parameters
+    #     for i in range(1):
+    #         # Set a seed for reproducibility
+    #         seed = get_seed()
+    #         args.seed = seed
+            
+    #         # Random shape selection
+    #         random_class = Random.choice(classes_all)
+    #         shape_ids = chooseClass(random_class)
 
-            # Random light parameters
-            intensity = Random.choice(light_levels_all)
-            orient_name, orientation = Random.choice(list(light_orientations_all.items()))
-            cam_name, cam_pos = Random.choice(list(camera_positions_all.items()))
-            color_name, color_value = Random.choice(list(light_colors_all.items()))
+    #         # Random light parameters
+    #         intensity = Random.choice(light_levels_all)
+    #         orient_name, orientation = Random.choice(list(light_orientations_all.items()))
+    #         cam_name, cam_pos = Random.choice(list(camera_positions_all.items()))
+    #         color_name, color_value = Random.choice(list(light_colors_all.items()))
 
-            print(f"\n🎲 Random sequence {seq_id} | shape={random_class} | light={int(intensity*100)}% | orient={orient_name} | cam={cam_name} | color={color_name}")
-            generate_sequence(seq_id, shape_ids, intensity, orientation, cam_pos, color_value, args, output_root)
-            seq_id += 1
+    #         print(f"\n🎲 Random sequence {seq_id} | shape={random_class} | light={int(intensity*100)}% | orient={orient_name} | cam={cam_name} | color={color_name}")
+    #         generate_sequence(seq_id, intensity, orientation, cam_pos, color_value, args, output_root)
+    #         seq_id += 1
 
     kb.done()
 
