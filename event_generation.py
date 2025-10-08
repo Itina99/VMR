@@ -6,7 +6,15 @@ import os
 import tqdm
 
 import esim_torch
+import argparse
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Generate events from image sequences")
+    parser.add_argument("--input_dir", type=str, default="output/upsampled_rgb",
+                       help="Directory containing input image sequences")
+    parser.add_argument("--output_dir", type=str, default="output/events",
+                       help="Directory to save generated events")
+    return parser.parse_args()
 
 def generate_events(input_dir, output_file, contrast_threshold_neg=0.2, contrast_threshold_pos=0.2, refractory_period_ns=0):     
     esim = esim_torch.ESIM(contrast_threshold_neg=contrast_threshold_neg,
@@ -38,7 +46,9 @@ def generate_events(input_dir, output_file, contrast_threshold_neg=0.2, contrast
                         p=events['p'].cpu().numpy())
 
 def main():
-    upsampled_rgb_dir = "output/upsampled_rgb"
+    args = parse_args()
+    upsampled_rgb_dir = args.input_dir  
+    output_dir = args.output_dir
     
     # Get all subdirectories in upsampled_rgb
     subdirs = [d for d in os.listdir(upsampled_rgb_dir) 
@@ -47,7 +57,7 @@ def main():
     progress_bar = tqdm.tqdm(subdirs, desc="Processing directories")
     for subdir in progress_bar:
         input_dir = os.path.join(upsampled_rgb_dir, subdir)
-        output_file = f"output/events/{subdir}.npz"
+        output_file = os.path.join(output_dir, f"{subdir}.npz")
         progress_bar.set_description(f"Processing upsampled sequences")
         generate_events(input_dir, output_file)
 

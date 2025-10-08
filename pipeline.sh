@@ -92,11 +92,6 @@ if [ "$SIMULATION_TYPE" = "shapenet" ]; then
             --max_camera_movement $MAX_CAMERA_MOVEMENT
 fi
 
-# # ========== BACKGROUND CLEANING ==========
-# # Remove background from RGB images using segmentation masks
-# echo "🧹 Pulizia background immagini..."
-# python clean_background.py --rgb_dir output/rgb --seg_dir output/segmentation --output_dir output/cleaned_rgb
-# echo "✅ Background cleaning completato"
 
 # # ========== 2. CLEANUP OUTPUT ==========
 # # Remove existing upsampled directory if it exists to ensure clean output
