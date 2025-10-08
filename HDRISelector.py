@@ -1,102 +1,130 @@
 import json
 import random
-import kubric as kb  # Assicurati di avere Kubric importato
-from typing import Set, Tuple, Optional
+import kubric as kb
+from typing import Set, Tuple, Optional, List
+import numpy as np
+import logging
 
 class HDRISelector:
-    # Tag e categorie ampiamente definiti per ciascuna luminosità
-    LUMINOSITY_MAP = {
-        "bright": {
-            "tags": {"sunny", "bright", "day", "clear", "blue_sky", "sun", "green", "open air",
-                     "pure skies", "midday", "calm", "coastal", "beach", "field", "meadow",
-                     "garden", "vine", "vineyard", "lawn", "forest", "countryside"},
-            "categories": {"midday","natural light","outdoor","pure skies","skies","nature"}
-        },
-        "medium": {
-            "tags": {"sunrise", "sunset", "twilight", "evening", "dawn", "dappled", "fog",
-                     "partly cloudy", "cloud", "overcast", "soft", "warm", "orange", "red", "yellow"},
-            "categories": {"morning-afternoon","sunrise-sunset","partly cloudy","overcast","medium contrast"}
-        },
-        "dark": {
-            "tags": {"night", "moon", "stars", "dark", "gloomy", "shadow", "indoor", "studio",
-                     "artificial light", "low_light", "industrial", "storm", "winter", "twilight"},
-            "categories": {"night","studio","artificial light","indoor","overcast","low contrast","high contrast"}
-        }
+    """
+    Una classe avanzata per selezionare HDRI in base a un valore di luminosità continuo [0, 1],
+    sfruttando i metadati EV (Exposure Value) e un sistema di pesi per tag e categorie.
+    """
+    # Mappa dei pesi per tag e categorie. Valori positivi indicano luminosità,
+    # valori negativi indicano oscurità.
+    LUMINOSITY_WEIGHTS = {
+        "sunny": 2.0, "bright": 1.5, "day": 1.0, "clear": 1.0, "sun": 2.0, "midday": 1.5, 
+        "blue sky": 1.0, "pure skies": 1.0, "outdoor": 0.5, "field": 0.2, "meadow": 0.2, 
+        "lawn": 0.2, "nature": 0.2, "overcast": -0.5, "cloudy": -0.5, "soft": -0.2, "fog": -0.8,
+        "night": -2.0, "moon": -1.5, "stars": -1.5, "dark": -1.5, "gloomy": -1.0, "indoor": -1.0, 
+        "studio": -1.0, "artificial light": -1.0, "low light": -1.0, "sunrise": 0.0, "sunset": 0.0, 
+        "twilight": -0.8, "evening": -0.5, "dawn": -0.2,
     }
 
-    def __init__(self, source: Optional[kb.AssetSource] = None, json_path: Optional[str] = None):
+    def __init__(self, source: kb.AssetSource, json_path: str):
         """
-        Inizializza HDRISelector:
-        - source: AssetSource di Kubric (mantiene la funzionalità di pick con AssetSource)
-        - json_path: percorso del JSON scaricato da Poly Haven
+        Inizializza HDRISelector.
+        - source: AssetSource di Kubric, obbligatorio.
+        - json_path: Percorso del JSON di Poly Haven, obbligatorio.
         """
-        if source is None and json_path is None:
-            raise ValueError("Devi fornire almeno un source o un json_path")
-
         self.source = source
         self.json_path = json_path
-        self.hdri_assets = source._assets if source is not None else None
+        
+        # --- MODIFICA CORRETTA ---
+        # Il tuo codice originale usava `source._assets` per accedere al dizionario degli asset.
+        # La logica migliorata ha bisogno di un `set` degli ID disponibili per un controllo rapido.
+        # Questa riga corregge l'errore `AttributeError` e prepara i dati correttamente.
+        self.available_asset_ids = set(source._assets.keys()) if source and hasattr(source, '_assets') else set()
+        
+        self.hdri_data = {}
+        self._process_json_data()
 
-        # Raggruppamento basato sul JSON
-        self.grouped = {"bright": [], "medium": [], "dark": []}
-        if self.json_path is not None:
-            self._group_assets_from_json()
-
-    def _group_assets_from_json(self):
-        """Raggruppa gli HDRI in bright/medium/dark usando solo il JSON"""
-        with open(self.json_path, "r") as f:
-            data = json.load(f)
+    def _process_json_data(self):
+        """
+        Elabora il JSON per calcolare un punteggio di luminosità normalizzato per ogni HDRI.
+        """
+        try:
+            with open(self.json_path, "r") as f:
+                data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            logging.error(f"Impossibile leggere o processare il file JSON: {e}")
+            return
 
         for hdri_id, meta in data.items():
+            ev_score = float(meta.get("evs", 0))
             tags = set(t.lower() for t in meta.get("tags", []))
             categories = set(c.lower() for c in meta.get("categories", []))
+            all_keywords = tags.union(categories)
+            
+            tag_score = sum(self.LUMINOSITY_WEIGHTS.get(kw, 0) for kw in all_keywords)
+            raw_score = (ev_score * 3) + tag_score
+            self.hdri_data[hdri_id] = {"raw_score": raw_score}
 
-            # Calcola punteggio per ciascun gruppo
-            scores = {}
-            for group, criteria in self.LUMINOSITY_MAP.items():
-                score = len(tags & criteria["tags"]) + len(categories & criteria["categories"])
-                scores[group] = score
+        # Normalizziamo i punteggi in un intervallo [0, 1]
+        all_scores = [d["raw_score"] for d in self.hdri_data.values()]
+        
+        # --- MODIFICA DI ROBUSTEZZA ---
+        # Aggiunto un controllo per evitare errori se il JSON è vuoto o non contiene punteggi.
+        if not all_scores:
+            logging.warning("Nessun punteggio calcolato dal file JSON. La normalizzazione non può essere eseguita.")
+            return
 
-            best_group = max(scores, key=scores.get)
-            if scores[best_group] == 0:
-                best_group = "bright"  # fallback
+        min_score, max_score = min(all_scores), max(all_scores)
+        
+        for hdri_id in self.hdri_data:
+            raw = self.hdri_data[hdri_id]["raw_score"]
+            if (max_score - min_score) != 0:
+                normalized = (raw - min_score) / (max_score - min_score)
+            else:
+                normalized = 0.5  # Se tutti gli HDRI hanno lo stesso punteggio, assegna un valore medio
+            self.hdri_data[hdri_id]["norm_brightness"] = normalized
 
-            self.grouped[best_group].append(hdri_id)
+    def pick(self, luminosity: float, k: int = 10, rng: Optional[np.random.RandomState] = None) -> str:
+        """
+        Ritorna un HDRI casuale il cui punteggio di luminosità è più vicino a quello richiesto.
+        - luminosity: Valore di luminosità desiderato [0..1].
+        - k: Numero dei migliori candidati tra cui scegliere casualmente.
+        - rng: Generatore di numeri casuali per la riproducibilità. Se None, usa `random`.
+        """
+        if not (0.0 <= luminosity <= 1.0):
+            raise ValueError("La luminosità deve essere compresa tra 0 e 1.")
+            
+        # --- MODIFICA PER LA RIPRODUCIBILITÀ ---
+        # Usa l'RNG fornito se presente, altrimenti il modulo `random` di default.
+        choice_fn = rng.choice if rng else random.choice
 
-    def pick(self, luminosity: float) -> str:
-        """Ritorna un hdri casuale coerente con la luminosità [0..1]"""
-        if self.source is None:
-            raise ValueError("pick() richiede un AssetSource fornito all'inizializzazione")
-
-        if luminosity >= 0.75:
-            group = "bright"
-        elif luminosity >= 0.5:
-            group = "medium"
-        else:
-            group = "dark"
-
-        # Se l'HDRI non è presente nel JSON (non raggruppato), fallback casuale su tutti gli asset
-        candidates = [hdri for hdri in self.grouped[group] if hdri in self.hdri_assets]
+        candidates = {
+            hdri_id: data for hdri_id, data in self.hdri_data.items()
+            if hdri_id in self.available_asset_ids and "norm_brightness" in data
+        }
+        
         if not candidates:
-            candidates = list(self.hdri_assets.keys())
-            print(f"[WARN] Nessun HDRI nel gruppo '{group}' disponibile nel source, pesco casuale da tutti.")
+            logging.warning("Nessun HDRI del JSON trovato nell'AssetSource. Scelta casuale tra tutti gli asset disponibili.")
+            return choice_fn(list(self.available_asset_ids))
 
-        return random.choice(candidates)
+        sorted_candidates = sorted(
+            candidates.items(),
+            key=lambda item: abs(item[1]["norm_brightness"] - luminosity)
+        )
+
+        top_k_candidates_items = sorted_candidates[:k]
+        
+        if not top_k_candidates_items:
+            return choice_fn(list(candidates.keys()))
+
+        # Estrai solo gli ID dei migliori candidati
+        top_k_ids = [item[0] for item in top_k_candidates_items]
+        return choice_fn(top_k_ids)
 
     def get_all_tags_and_categories(self) -> Tuple[Set[str], Set[str]]:
         """
         Restituisce due set contenenti tutti i tag e tutte le categorie uniche
-        presenti nel JSON scaricato da Poly Haven
+        presenti nel JSON di Poly Haven.
         """
-        if self.json_path is None:
-            raise ValueError("get_all_tags_and_categories richiede il percorso json_path")
-
         with open(self.json_path, "r") as f:
             data = json.load(f)
 
-        all_tags = set()
-        all_categories = set()
-
+        all_tags, all_categories = set(), set()
         for meta in data.values():
             all_tags.update(t.lower() for t in meta.get("tags", []))
             all_categories.update(c.lower() for c in meta.get("categories", []))

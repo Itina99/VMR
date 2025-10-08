@@ -12,7 +12,7 @@ EVENTS_DIR="$OUTPUT_DIR/events"
 
 CONFIG_FILE="${1:-config.json}"
 if [ -f "$CONFIG_FILE" ]; then
-    CLASSES=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); v=c.get('classes', []); print(' '.join(v if isinstance(v, list) else str(v).replace(',', ' ').split()))")
+    N_OF_SEQUENCES=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); print(c.get('sequence_number', 1))")
     LIGHT_LEVELS=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); v=c.get('light_levels', []); v = v if isinstance(v, list) else [x for x in str(v).replace(',', ' ').split()]; print(' '.join(map(str, v)))")
     LIGHT_ORIENTATIONS=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); d=c.get('light_orientations', {}); print(' '.join([f\"{k} {v[0]} {v[1]} {v[2]}\" for k,v in d.items()]))")
     CAMERA_POSITIONS=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); d=c.get('camera_positions', {}); print(' '.join([f\"{k} {v[0]} {v[1]} {v[2]}\" for k,v in d.items()]))")
@@ -27,7 +27,7 @@ if [ -f "$CONFIG_FILE" ]; then
 echo "📋 Configurazioni caricate da $CONFIG_FILE"
 else
     echo "⚠️  File di configurazione $CONFIG_FILE non trovato, uso valori di default"
-    CLASSES="chair table lamp"
+    N_OF_SEQUENCES="1"
     LIGHT_LEVELS="0.5 1.0 1.5"
     LIGHT_COLORS="white 1.0 1.0 1.0 1.0 red 1.0 0.0 0.0 1.0"
     CAMERA_POSITIONS="front 0 0 5 side 5 0 0 top 0 5 5"
@@ -46,6 +46,7 @@ fi
 echo "📋 Configurazioni attive:"
 echo "  - Tipo simulazione: $SIMULATION_TYPE"
 echo "  - Directory output: $OUTPUT_DIR"
+echo "  - Numero sequenze: $N_OF_SEQUENCES"
 echo "  - Classi ShapeNet: $CLASSES"
 echo "  - Livelli di luce: $LIGHT_LEVELS"
 echo "  - Colori luce: $LIGHT_COLORS"
@@ -61,7 +62,7 @@ CURRENT_DIR=$(pwd)
 # ========== ATTIVAZIONE AMBIENTE CONDA ==========
 echo "🔧 Attivazione ambiente conda 'vid2e'..."
 source $(conda info --base)/etc/profile.d/conda.sh
-conda activate vid2eUps
+conda activate vid2e
 echo "✅ Ambiente conda 'vid2e' attivato"
 echo ""
 # ========== 1. SIMULAZIONE ==========
@@ -73,10 +74,11 @@ if [ "$SIMULATION_TYPE" = "shapenet" ]; then
     docker run --rm -it \
         --user ${USER_ID}:${GROUP_ID} \
         --volume ${CURRENT_DIR}:/kubric \
+        -e PYTHONPATH=/kubric \
         kubricdockerhub/kubruntu \
-        /usr/bin/python3 generator_shapenet.py \
+        /usr/bin/python3 /kubric/generator_shapenet.py \
             --output_root "$OUTPUT_DIR" \
-            --classes $CLASSES \
+            --sequences $N_OF_SEQUENCES \
             --light_levels $LIGHT_LEVELS \
             --light_orientations $LIGHT_ORIENTATIONS \
             --camera_positions $CAMERA_POSITIONS \
@@ -90,32 +92,32 @@ if [ "$SIMULATION_TYPE" = "shapenet" ]; then
             --max_camera_movement $MAX_CAMERA_MOVEMENT
 fi
 
-# ========== BACKGROUND CLEANING ==========
-# Remove background from RGB images using segmentation masks
-echo "🧹 Pulizia background immagini..."
-python clean_background.py --rgb_dir output/rgb --seg_dir output/segmentation --output_dir output/cleaned_rgb
-echo "✅ Background cleaning completato"
+# # ========== BACKGROUND CLEANING ==========
+# # Remove background from RGB images using segmentation masks
+# echo "🧹 Pulizia background immagini..."
+# python clean_background.py --rgb_dir output/rgb --seg_dir output/segmentation --output_dir output/cleaned_rgb
+# echo "✅ Background cleaning completato"
 
-# ========== 2. CLEANUP OUTPUT ==========
-# Remove existing upsampled directory if it exists to ensure clean output
-if [ -d "$UPSAMPLED_DIR" ]; then
-    echo "🧹 Pulizia directory esistente: $UPSAMPLED_DIR"
-    rm -rf "$UPSAMPLED_DIR"
-fi
+# # ========== 2. CLEANUP OUTPUT ==========
+# # Remove existing upsampled directory if it exists to ensure clean output
+# if [ -d "$UPSAMPLED_DIR" ]; then
+#     echo "🧹 Pulizia directory esistente: $UPSAMPLED_DIR"
+#     rm -rf "$UPSAMPLED_DIR"
+# fi
 
-# ========== 3. UPSAMPLING AND EVENT GENERATION ==========
-# Generate upsampled frames from simulation output to increase temporal resolution
-echo "⚡ Generazione eventi e upsampling..."
-python3 upsample_frames.py --input_dir "$OUTPUT_DIR" --output_dir "$UPSAMPLED_DIR"
+# # ========== 3. UPSAMPLING AND EVENT GENERATION ==========
+# # Generate upsampled frames from simulation output to increase temporal resolution
+# echo "⚡ Generazione eventi e upsampling..."
+# python3 upsample_frames.py --input_dir "$OUTPUT_DIR" --output_dir "$UPSAMPLED_DIR"
 
-conda activate vid2e
-# Generate event data from upsampled RGB frames
-echo "✅ Pulizia completata. Generazione eventi..."
-python3 event_generation.py --input_dir "$UPSAMPLED_DIR" --output_dir "$EVENTS_DIR"
+# conda activate vid2e
+# # Generate event data from upsampled RGB frames
+# echo "✅ Pulizia completata. Generazione eventi..."
+# python3 event_generation.py --input_dir "$UPSAMPLED_DIR" --output_dir "$EVENTS_DIR"
 
-# Create GIF animations from NPZ event data for visualization
-echo "🎬 Generazione gif eventi..."
-python3 npz_to_gif.py
+# # Create GIF animations from NPZ event data for visualization
+# echo "🎬 Generazione gif eventi..."
+# python3 npz_to_gif.py
 
-# Pipeline execution completed successfully
-echo "✅ Pipeline completata!"
+# # Pipeline execution completed successfully
+# echo "✅ Pipeline completata!"

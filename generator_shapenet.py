@@ -7,7 +7,6 @@ import kubric as kb
 import bpy
 from kubric.renderer.blender import Blender as KubricBlender
 from kubric.simulator.pybullet import PyBullet as KubricSimulator
-from kubric.assets.asset_source import AssetSource
 from kubric.file_io import (
     write_rgb_batch,
     write_rgba_batch,
@@ -20,15 +19,14 @@ from kubric.file_io import (
     write_segmentation_batch,
     write_coordinates_batch,
 )
+from kubric import utils as kb_utils
 from tqdm import tqdm
 from pathlib import Path
-import json
-from collections import defaultdict
 import random as Random
 from HDRISelector import HDRISelector
 from datetime import datetime
 import time
-
+import math
 
 
 
@@ -36,7 +34,7 @@ import time
 # --- CONFIGURAZIONE GLOBALE ---
 # ============================================================
 
-logging.basicConfig(level="INFO")
+logging.basicConfig(level="WARNING")
 os.environ["KUBRIC_USE_GPU"] = "1"
 
 writer_map = {
@@ -125,7 +123,46 @@ print(f"✅ HDRI: {len(HDRI_SOURCE._assets)} mappe caricate")
 print(f"✅ KuBasic asset disponibili")
 
 
+# ============================================================
+# --- LIGHT DIRECTION SELECTION---
+# ============================================================
+def get_light_direction(luminosity: float, rng: np.random.RandomState, distance: float = 10.0) -> np.ndarray:
+    """
+    Calcola una posizione casuale per la luce su una semisfera,
+    mantenendo l'altezza legata alla luminosità.
 
+    Args:
+        luminosity (float): Il livello di luminosità [0.0, 1.0], che controlla l'altezza.
+        rng (np.random.RandomState): Il generatore di numeri casuali per la riproducibilità.
+        distance (float): La distanza della luce dal centro della scena.
+
+    Returns:
+        np.ndarray: Un vettore di posizione 3D per la luce direzionale.
+    """
+    # Assicura che la luminosità sia nell'intervallo [0, 1]
+    luminosity = np.clip(luminosity, 0.0, 1.0)
+    
+    # 1. Calcola l'altezza (angolo di elevazione) basata sulla luminosità
+    #    1.0 -> 90 gradi (zenith), 0.0 -> 0 gradi (orizzonte)
+    elevation_rad = luminosity * (math.pi / 2.0)
+    
+    # 2. Scegli una direzione casuale sull'orizzonte (angolo di azimuth)
+    #    Scegliamo un punto casuale su un cerchio completo (0 a 360 gradi)
+    azimuth_rad = rng.uniform(0, 2 * math.pi)
+    
+    # 3. Converti le coordinate sferiche (distanza, elevazione, azimuth) in cartesiane (x, y, z)
+    #    Proiezione della distanza sul piano XY
+    xy_projection = distance * math.cos(elevation_rad)
+    
+    x = xy_projection * math.cos(azimuth_rad)
+    y = xy_projection * math.sin(azimuth_rad)
+    z = distance * math.sin(elevation_rad)
+    
+    # Aggiungi un'altezza minima per evitare artefatti di rendering
+    if z < 0.1:
+        z = 0.1
+        
+    return np.array([x, y, z])
 
 # ============================================================
 # --- cAMERA MOVEMENT FUNCTIONS---
@@ -197,7 +234,6 @@ def parse_args():
     parser.add_argument("--max_camera_movement", type=float, default=4.0)
 
     return parser.parse_args()
-
 
 
 # ============================================================
@@ -591,6 +627,324 @@ def get_seed():
     """Return a random seed for generation."""
     return int(time.time() * 1000) % 2**32
 
+
+
+# ============================================================
+# --- TEST SEED ---
+# ============================================================
+
+
+def generate_scene_layout(seed: int, FLAGS):
+    """
+    Usa un seed per generare una lista di oggetti con le loro proprietà 
+    di "spawn" (posizione iniziale, scala, ecc.). 
+    NON esegue la simulazione di assestamento.
+    """
+    print(f"🔩 Generazione della lista di spawn con seed {seed}...")
+    rng = np.random.RandomState(seed)
+
+    FLAGS.seed = seed
+    temp_scene, _, _, _ = kb.setup(FLAGS)
+    simulator = KubricSimulator(temp_scene)
+    
+    dome = KUBASIC_SOURCE.create(asset_id="dome", name="dome", static=True, background=True)
+    temp_scene += dome
+    
+    layout_data = []
+    # === 1. Posizionamento Iniziale Oggetti Statici ===
+    num_static = rng.randint(MIN_STATIC, MAX_STATIC + 1)
+    print(f"  📦 Generating {num_static} static objects...")
+    for idx in range(num_static):
+        random_class = rng.choice(classes_all)
+        shape_ids = chooseClass(random_class)
+        shape_id = rng.choice(shape_ids)
+        
+        obj = ASSET_SOURCE.create(shape_id)
+        scale = rng.uniform(0.75, 3.0)
+        obj.scale = scale / np.max(obj.bounds[1] - obj.bounds[0])
+        
+        temp_scene += obj
+        kb.move_until_no_overlap(obj, simulator, spawn_region=SPAWN_REGION_STATIC, rng=rng)
+        
+        layout_data.append({
+            "asset_id": obj.asset_id, "segmentation_id": idx + 1,
+            "position": tuple(obj.position), "quaternion": tuple(obj.quaternion),
+            "scale": tuple(obj.scale), "static": True
+        })
+
+    # === 4. Posizionamento Oggetti Dinamici ===
+    num_dynamic = rng.randint(MIN_DYNAMIC, MAX_DYNAMIC + 1)
+    print(f"  📦 Generating {num_dynamic} dynamic objects...")
+    for idx in range(num_dynamic):
+        random_class = rng.choice(classes_all)
+        shape_ids = chooseClass(random_class)
+        shape_id = rng.choice(shape_ids)
+
+        obj = ASSET_SOURCE.create(shape_id)
+        scale = rng.uniform(0.75, 3.0)
+        obj.scale = scale / np.max(obj.bounds[1] - obj.bounds[0])
+
+        temp_scene += obj
+        kb.move_until_no_overlap(obj, simulator, spawn_region=SPAWN_REGION_DYNAMIC, rng=rng)
+        velocity = (rng.uniform(*VELOCITY_RANGE) - [obj.position[0], obj.position[1], 0])
+        
+        layout_data.append({
+            "asset_id": obj.asset_id, "segmentation_id": num_static + idx + 1,
+            "position": tuple(obj.position), "quaternion": tuple(obj.quaternion),
+            "scale": tuple(obj.scale), "velocity": tuple(velocity),
+            "angular_velocity": (0., 0., 0.), "static": False
+        })
+        
+    print(f"  -> Lista di spawn per {len(layout_data)} oggetti creata.")
+    return layout_data
+
+
+def render_variation(seq_id: int, layout_data: list, light_intensity: float, orientation: tuple, camera_position: tuple, light_color: tuple, FLAGS, output_root: Path = Path("output")):
+    """Crea una scena, la popola, imposta i parametri della variazione (camera, luci) e include la logica completa per dome, HDRI, rendering e salvataggio."""
+    # 1. SETUP INIZIALE
+    # Eseguiamo la pulizia solo qui, per garantire che ogni variazione sia indipendente
+    clean_blender_scene()
+
+    scene, rng, output_dir, scratch_dir = kb.setup(FLAGS)
+    renderer = KubricBlender(scene, use_denoising=True, samples_per_pixel=64)
+    simulator = KubricSimulator(scene)
+
+
+    # 2. SETUP DELLA SCENA (LUCI, SFONDO, CAMERA)
+    hdri_id = selector.pick(light_intensity)
+    print(f"🌅 Using HDRI: {hdri_id}")
+    background_hdri = HDRI_SOURCE.create(asset_id=hdri_id)
+    scene.metadata["background"] = hdri_id
+
+    # --- Usa le tue variabili 'light_intensity' e 'light_color' ---
+    logging.info(f"Using light intensity: {light_intensity:.2f}")
+    logging.info(f"Using light color: {light_color}")
+
+    # --- CALIBRAZIONE DELLA LUMINOSITÀ ---
+    LIGHT_SOURCE_GAMMA = 1.0
+    light_source_intensity = light_intensity ** LIGHT_SOURCE_GAMMA
+    BACKGROUND_GAMMA = 1.0
+    background_visual_intensity = light_intensity ** BACKGROUND_GAMMA
+    AMBIENT_LIGHT_FACTOR = 0.8
+    print(f"INFO: Intensità luce: {light_source_intensity:.4f} | Intensità sfondo: {background_visual_intensity:.4f} | Luce ambiente: {AMBIENT_LIGHT_FACTOR}")
+
+    # --- Luce ambientale del Mondo di Blender ---
+    world_background_node = bpy.context.scene.world.node_tree.nodes.get("Background")
+    if world_background_node:
+        # Usiamo direttamente la variabile light_color, che dovrebbe essere un RGBA
+        world_background_node.inputs["Color"].default_value = light_color
+        world_background_node.inputs["Strength"].default_value = AMBIENT_LIGHT_FACTOR * light_intensity
+        print("INFO: Luce ambientale del Mondo configurata con colore personalizzato.")
+
+    # --- Aggiungiamo un Sole ---
+    SUN_BASE_INTENSITY = 0.5
+    sun = kb.DirectionalLight(
+        name="sun",
+        position=(-1, -1, 3.0),
+        look_at=(0, 0, 0),
+        # Forniamo solo i primi 3 componenti (RGB)
+        color=light_color[:3],
+        intensity=SUN_BASE_INTENSITY * light_source_intensity
+    )
+    scene.add(sun)
+    print("INFO: Luce del Sole configurata con colore personalizzato.")
+
+    # --- Dome dello sfondo ---
+    dome = KUBASIC_SOURCE.create(asset_id="dome", name="dome", static=True, background=True)
+    scene += dome
+    dome_blender = dome.linked_objects[renderer]
+    texture_node_ref = dome_blender.data.materials[0].node_tree.nodes["Image Texture"]
+    texture_node_ref.image = bpy.data.images.load(background_hdri.filename)
+    material = dome_blender.data.materials[0]
+    node_tree = material.node_tree
+    texture_node = node_tree.nodes.get("Image Texture")
+
+    if texture_node:
+        if texture_node.outputs["Color"].links:
+            original_destinations = []
+            for link in texture_node.outputs["Color"].links:
+                original_destinations.append(link.to_socket)
+
+            for link in list(texture_node.outputs["Color"].links):
+                node_tree.links.remove(link)
+
+            color_dimmer_node = node_tree.nodes.new(type='ShaderNodeVectorMath')
+            color_dimmer_node.operation = 'MULTIPLY'
+
+            # --- MODIFICA CHIAVE ---
+            # Creiamo un nuovo vettore che combina il colore e l'intensità dello sfondo.
+            # Moltiplichiamo ogni componente di light_color per l'intensità.
+            bg_vec = [c * background_visual_intensity for c in light_color[:3]]
+            # -------------------------
+
+            color_dimmer_node.inputs[1].default_value = bg_vec
+
+            node_tree.links.new(texture_node.outputs["Color"], color_dimmer_node.inputs[0])
+
+            for dest_socket in original_destinations:
+                node_tree.links.new(node_tree.nodes["Vector Math"].outputs["Vector"], dest_socket)
+
+    # --- Camera ---
+    camera_mode = FLAGS.camera_mode
+    max_camera_speed = FLAGS.max_camera_movement
+    logging.info(f"🎥 Setting up Camera in '{camera_mode}' mode...")
+    print(f"🎥 Setting up Camera in '{FLAGS.camera_mode}' mode...")
+
+    scene.camera = kb.PerspectiveCamera(name="camera", focal_length=35., sensor_width=32)
+
+    if camera_mode == "fixed":
+        #scene.camera.position = kb.sample_point_in_half_sphere_shell(inner_radius=7., outer_radius=9., offset=0.1)
+        scene.camera.position = camera_position
+        scene.camera.look_at((0, 0, 0))
+        logging.info(f"Camera position fixed at {scene.camera.position}")
+
+    elif camera_mode == "linear_movement":
+        # Calcola una velocità casuale per questo movimento
+        speed = rng.uniform(0., max_camera_speed)
+        camera_start, camera_end = get_linear_camera_motion_start_end(movement_speed=speed)
+        logging.info(f"Camera will move from {camera_start} to {camera_end} with speed {speed:.2f}")
+
+        for frame in range(scene.frame_start, scene.frame_end + 1):
+            interp = (frame - scene.frame_start) / (scene.frame_end - scene.frame_start)
+            scene.camera.position = (1 - interp) * camera_start + interp * camera_end
+            scene.camera.look_at((0, 0, 0))
+            scene.camera.keyframe_insert("position", frame)
+            scene.camera.keyframe_insert("quaternion", frame)
+
+    elif camera_mode == "panning":
+        speed = rng.uniform(0., max_camera_speed)
+        camera_start, camera_end = get_linear_camera_motion_start_end(movement_speed=speed)
+        lookat_start, lookat_end = get_linear_lookat_motion_start_end()
+        logging.info(f"Camera will move from {camera_start} to {camera_end} with speed {speed:.2f}")
+        logging.info(f"Camera will pan from {lookat_start} to {lookat_end}")
+
+        for frame in range(scene.frame_start, scene.frame_end + 1):
+            interp = (frame - scene.frame_start) / (scene.frame_end - scene.frame_start)
+            scene.camera.position = (1 - interp) * camera_start + interp * camera_end
+            scene.camera.look_at((1 - interp) * lookat_start + interp * lookat_end)
+            scene.camera.keyframe_insert("position", frame)
+            scene.camera.keyframe_insert("quaternion", frame)
+# --- FASE 1: Popolamento e Assestamento degli Oggetti Statici ---
+    print("INFO: Fase 1 - Popolamento e assestamento oggetti statici...")
+    
+    dynamic_objects_data = []
+    static_asset_references = []
+
+    for obj_data in layout_data:
+        if obj_data["static"]:
+            obj = ASSET_SOURCE.create(asset_id=obj_data["asset_id"])
+            obj.segmentation_id = obj_data["segmentation_id"]
+            obj.position = obj_data["position"]
+            obj.quaternion = obj_data["quaternion"]
+            obj.scale = obj_data["scale"]
+            scene += obj
+            static_asset_references.append(obj)
+        else:
+            # Mettiamo da parte i dati degli oggetti dinamici per dopo
+            dynamic_objects_data.append(obj_data)
+
+    # Eseguiamo una simulazione sufficientemente lunga per l'assestamento
+    # dei soli oggetti statici.
+    if static_asset_references:
+        print(f"INFO: Esecuzione simulazione di assestamento per {len(static_asset_references)} oggetti statici...")
+        simulator.run(frame_start=-100, frame_end=0)
+
+        # Fermiamo completamente gli oggetti statici dopo l'assestamento
+        for obj in static_asset_references:
+            obj.velocity = (0., 0., 0.)
+            obj.angular_velocity = (0., 0., 0.)
+
+    # --- FASE 2: Popolamento degli Oggetti Dinamici ---
+    print(f"INFO: Fase 2 - Popolamento di {len(dynamic_objects_data)} oggetti dinamici...")
+    for obj_data in dynamic_objects_data:
+        obj = ASSET_SOURCE.create(asset_id=obj_data["asset_id"])
+        obj.segmentation_id = obj_data["segmentation_id"]
+        obj.position = obj_data["position"]
+        obj.quaternion = obj_data["quaternion"]
+        obj.scale = obj_data["scale"]
+        obj.velocity = obj_data["velocity"]
+        obj.angular_velocity = obj_data["angular_velocity"]
+        scene += obj
+
+    # --- FASE 3: Simulazione Finale e Rendering ---
+    print("🎬 Simulazione finale...")
+    animation, collisions = simulator.run(frame_start=0, frame_end=scene.frame_end)
+    print("Saving state...")
+    renderer.save_state(output_root / f"states/seq{seq_id}.blend")
+    print("🎥 Rendering...")
+    frames_dict = renderer.render()
+
+    # 5. POST-PROCESSING E SALVATAGGIO
+    kb.compute_visibility(frames_dict["segmentation"], scene.assets)
+    visible_foreground_assets = [asset for asset in scene.foreground_assets if np.max(asset.metadata["visibility"]) > 0]
+    kb.post_processing.compute_bboxes(frames_dict["segmentation"], visible_foreground_assets)
+
+    # Salvataggio frame
+    print(f"💾 Salvataggio frame per seq{seq_id}...")
+    for key in tqdm(frames_dict.keys(), desc=f"Scrittura Frame seq{seq_id}", unit="tipo"):
+        value = frames_dict[key]
+        base_dir = output_root / key / f"seq{seq_id}"
+        imgs_dir = base_dir / "imgs"
+        imgs_dir.mkdir(parents=True, exist_ok=True)
+
+        if key == "rgba":
+            writer_map["rgba"](value, imgs_dir)
+            rgb = value[..., :3]
+            rgb_base_dir = output_root / "rgb" / f"seq{seq_id}"
+            rgb_imgs_dir = rgb_base_dir / "imgs"
+            rgb_imgs_dir.mkdir(parents=True, exist_ok=True)
+            writer_map["rgb"](rgb, rgb_imgs_dir)
+            with open(rgb_base_dir / "fps.txt", "w") as f: f.write(str(scene.frame_rate))
+        elif key in writer_map:
+            writer_map[key](value, imgs_dir)
+            with open(base_dir / "fps.txt", "w") as f: f.write(str(scene.frame_rate))
+                
+    # Metadata
+    exclude_names = {"floor", "camera", "sun", "dome"}
+    scene_objects = [obj for obj in scene.assets if obj.name not in exclude_names]
+    data = {"scene_metadata": kb.get_scene_metadata(scene), "camera": kb.get_camera_info(scene.camera), "object": kb.get_instance_info(scene, scene_objects)}
+    annotations_dir = output_root / "annotations"
+    annotations_dir.mkdir(parents=True, exist_ok=True)
+    metadata_path = annotations_dir / f"seq{seq_id}_metadata.json"
+    kb.file_io.write_json(filename=metadata_path, data=data)
+    
+    gc.collect()
+    return data
+
+
+def clean_blender_scene():
+    """
+    Forza la pulizia completa della scena di Blender, rimuovendo tutti i dati.
+    Questa è l'alternativa manuale e robusta a kb.utils.reset_blend_file().
+    """
+    # Assicurati che non ci sia una scena attiva in modalità modifica
+    if bpy.context.active_object and bpy.context.active_object.mode == 'EDIT':
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+    # Seleziona tutti gli oggetti e cancellali
+    bpy.ops.object.select_all(action='SELECT')
+    bpy.ops.object.delete()
+
+    # Cancella i dati orfani (mesh, materiali, ecc. non più usati)
+    # Eseguire più volte garantisce la pulizia delle dipendenze
+    for _ in range(4):
+        for block in bpy.data.meshes:
+            if block.users == 0:
+                bpy.data.meshes.remove(block)
+
+        for block in bpy.data.materials:
+            if block.users == 0:
+                bpy.data.materials.remove(block)
+
+        for block in bpy.data.textures:
+            if block.users == 0:
+                bpy.data.textures.remove(block)
+
+        for block in bpy.data.images:
+            if block.users == 0:
+                bpy.data.images.remove(block)
+
+    print("INFO: Scena di Blender pulita manualmente.")
 # ============================================================
 # --- MAIN ---
 # ============================================================
@@ -690,19 +1044,25 @@ def main():
     coco_data = initialize_coco_dict()
     annotation_id_counter = 1
     image_id_counter = 1
-
+    print("INFO: Inizializzazione dell'ambiente Kubric (Bootstrap)...")
+    kb.setup(args) 
+    clean_blender_scene()
     for seq_batch in range(num_sequences):
-        # Set a seed variable for reproducibility - one seed per batch of all configurations
+        # 1. Imposta il SEED una sola volta per l'intero batch
         seed = get_seed()
         args.seed = seed
-        print(f"\n🌟 Starting sequence batch {seq_batch + 1}/{num_sequences} with seed {seed}")
+        print(f"\n🌟 Inizio sequence batch {seq_batch + 1}/{num_sequences} con SEED {seed}")
         
+        # 2. GENERA IL LAYOUT CASUALE UNA SOLA VOLTA USANDO IL SEED
+        layout_data = generate_scene_layout(seed, args)
+
+        # 3. Ora cicla sulle variazioni, che sono PURAMENTE DETERMINISTICHE
         for intensity in light_levels:
             for orient_name, orientation in light_orientations.items():
                 for cam_name, cam_pos in camera_positions.items():
                     for color_name, color_value in light_colors.items():
                         print(f"\n🚀 Generazione sequenza {seq_id} | batch {seq_batch + 1} | seed {args.seed} | light={int(intensity*100)}% | orient={orient_name} | cam={cam_name} | color={color_name}")
-                        kubric_metadata = generate_sequence(seq_id, intensity, orientation, cam_pos, color_value, args, output_root)
+                        kubric_metadata = render_variation(seq_id=seq_id, layout_data=layout_data, light_intensity=intensity, orientation=orientation, camera_position=cam_pos, light_color=color_value, FLAGS=args, output_root=output_root)
                         # 4. Aggiorna il dizionario COCO con i nuovi dati
                         coco_data, annotation_id_counter, image_id_counter = update_coco_from_metadata(coco_data, kubric_metadata, seq_id, annotation_id_counter, image_id_counter)
                         seq_id += 1

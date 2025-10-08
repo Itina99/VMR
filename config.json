@@ -1,23 +1,21 @@
 {
-    "classes": ["airplane", "car", "chair"],
-    "light_levels": [1.0, 0.5, 0.2],
+    "sequence_number": 1,
+    "light_levels": [1.0, 0.5, 0.25],
     "light_orientations": {
-        "side_45": [0.0, 0.0, 0.78539],
-        "top_60": [0.0, 1.0472, 0.0]
+        "side_45": [0.0, 0.0, 0.78539]
+
     },
     "camera_positions": {
-        "tilt_30": [4, -7, 3],
-        "tilt_45": [5, -6, 4]
+        "tilt_30": [4, -7, 3]
     },
     "light_colors": {
-        "white": [1.0, 1.0, 1.0, 1.0],
-        "soft_yellow": [1.0, 0.95, 0.85, 1.0]
+        "white": [1.0, 1.0, 1.0, 1.0]
     },
     "random_generation": false,
     "resolution": "256x256",
     "frame_end": 60,
     "frame_rate": 30,
     "step_rate": 240,
-    "camera_mode": "panning",
+    "camera_mode": "fixed",
     "max_camera_movement": 2.0
 }
