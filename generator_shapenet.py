@@ -61,7 +61,7 @@ MIN_DYNAMIC, MAX_DYNAMIC = 1, 2
 SPAWN_REGION_STATIC = [[-5, -5, 0], [5, 5, 0]]
 SPAWN_REGION_DYNAMIC = [[-5, -5, 1], [5, 5, 6]]
 VELOCITY_RANGE = [(-4., -4., 0.), (4., 4., 0.)]
-CAMERA_TYPES = ["fixed_random", "linear_movement", "linear_movement_linear_lookat"]
+CAMERA_TYPES = ["fixed", "linear_movement", "panning"]
 MAX_CAMERA_MOVEMENT = 4.0
 
 # Percorsi ai manifest
@@ -1059,13 +1059,24 @@ def main():
         # 3. Ora cicla sulle variazioni, che sono PURAMENTE DETERMINISTICHE
         for intensity in light_levels:
             for orient_name, orientation in light_orientations.items():
-                for cam_name, cam_pos in camera_positions.items():
-                    for color_name, color_value in light_colors.items():
-                        print(f"\n🚀 Generazione sequenza {seq_id} | batch {seq_batch + 1} | seed {args.seed} | light={int(intensity*100)}% | orient={orient_name} | cam={cam_name} | color={color_name}")
-                        kubric_metadata = render_variation(seq_id=seq_id, layout_data=layout_data, light_intensity=intensity, orientation=orientation, camera_position=cam_pos, light_color=color_value, FLAGS=args, output_root=output_root)
-                        # 4. Aggiorna il dizionario COCO con i nuovi dati
-                        coco_data, annotation_id_counter, image_id_counter = update_coco_from_metadata(coco_data, kubric_metadata, seq_id, annotation_id_counter, image_id_counter)
-                        seq_id += 1
+                for color_name, color_value in light_colors.items():
+                # Camera position is only cycled if camera mode is fixed
+                    for cam_mode in CAMERA_TYPES:
+                        args.camera_mode = cam_mode
+                        if args.camera_mode == "fixed":
+                            for cam_name, cam_pos in camera_positions.items():
+                                print(f"\n🚀 Generazione sequenza {seq_id} | batch {seq_batch + 1} | seed {args.seed} | light={int(intensity*100)}% | orient={orient_name} | cam={cam_name} | color={color_name} | camera_mode={args.camera_mode}")
+                                kubric_metadata = render_variation(seq_id=seq_id, layout_data=layout_data, light_intensity=intensity, orientation=orientation, camera_position=cam_pos, light_color=color_value, FLAGS=args, output_root=output_root)
+                                # 4. Aggiorna il dizionario COCO con i nuovi dati
+                                coco_data, annotation_id_counter, image_id_counter = update_coco_from_metadata(coco_data, kubric_metadata, seq_id, annotation_id_counter, image_id_counter)
+                                seq_id += 1
+                        else:
+                            # For non-fixed camera modes, don't cycle through camera positions
+                            print(f"\n🚀 Generazione sequenza {seq_id} | batch {seq_batch + 1} | seed {args.seed} | light={int(intensity*100)}% | orient={orient_name} | color={color_name} | camera_mode={args.camera_mode}")
+                            kubric_metadata = render_variation(seq_id=seq_id, layout_data=layout_data, light_intensity=intensity, orientation=orientation, camera_position=None, light_color=color_value, FLAGS=args, output_root=output_root)
+                            # 4. Aggiorna il dizionario COCO con i nuovi dati
+                            coco_data, annotation_id_counter, image_id_counter = update_coco_from_metadata(coco_data, kubric_metadata, seq_id, annotation_id_counter, image_id_counter)
+                            seq_id += 1
 
     annotations_path = output_root / "annotations.json"
     kb.file_io.write_json(filename=annotations_path, data=coco_data)
