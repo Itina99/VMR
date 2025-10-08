@@ -721,11 +721,11 @@ def render_variation(seq_id: int, layout_data: list, light_intensity: float, ori
     logging.info(f"Using light color: {light_color}")
 
     # --- CALIBRAZIONE DELLA LUMINOSITÀ ---
-    LIGHT_SOURCE_GAMMA = 1.0
+    LIGHT_SOURCE_GAMMA = 2.2
     light_source_intensity = light_intensity ** LIGHT_SOURCE_GAMMA
-    BACKGROUND_GAMMA = 1.0
+    BACKGROUND_GAMMA = 2.2
     background_visual_intensity = light_intensity ** BACKGROUND_GAMMA
-    AMBIENT_LIGHT_FACTOR = 0.8
+    AMBIENT_LIGHT_FACTOR = 0.1
     print(f"INFO: Intensità luce: {light_source_intensity:.4f} | Intensità sfondo: {background_visual_intensity:.4f} | Luce ambiente: {AMBIENT_LIGHT_FACTOR}")
 
     # --- Luce ambientale del Mondo di Blender ---
@@ -737,7 +737,7 @@ def render_variation(seq_id: int, layout_data: list, light_intensity: float, ori
         print("INFO: Luce ambientale del Mondo configurata con colore personalizzato.")
 
     # --- Aggiungiamo un Sole ---
-    SUN_BASE_INTENSITY = 0.5
+    SUN_BASE_INTENSITY = 0.25
     sun = kb.DirectionalLight(
         name="sun",
         position=(-1, -1, 3.0),
