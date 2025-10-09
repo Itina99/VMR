@@ -61,7 +61,7 @@ MIN_DYNAMIC, MAX_DYNAMIC = 1, 2
 SPAWN_REGION_STATIC = [[-5, -5, 0], [5, 5, 0]]
 SPAWN_REGION_DYNAMIC = [[-5, -5, 1], [5, 5, 6]]
 VELOCITY_RANGE = [(-4., -4., 0.), (4., 4., 0.)]
-CAMERA_TYPES = ["fixed", "linear_movement", "panning"]
+CAMERA_TYPES = ["fixed"]
 MAX_CAMERA_MOVEMENT = 4.0
 
 # Percorsi ai manifest
@@ -93,7 +93,7 @@ light_orientations_all = {
     "side_90": (0., 0., np.pi/2),
     "back_135": (0., 0., 3*np.pi/4),
     "top": (np.pi/2, 0., 0.),
-    "bottom": (-np.pi/2, 0., 0.)
+    #"bottom": (-np.pi/2, 0., 0.)
 }
 
 camera_positions_all = {
@@ -104,7 +104,7 @@ camera_positions_all = {
     "retro_120": (7, 4, 3),         # 120° retro-inclinata no con luce 0
     "back_180": (0, 8, 0),          # 180° dietro nope
     "top": (0, 0, 8),               # zenitale si vede l'oggetto troppo
-    "bottom": (0, 0, -8),           # vista dal basso questo è ok 
+    #"bottom": (0, 0, -8),           # vista dal basso questo è ok 
 }
 light_colors_all = {
     "white":   (1.0, 1.0, 1.0, 1.0),
@@ -124,8 +124,9 @@ print(f"✅ KuBasic asset disponibili")
 
 
 # ============================================================
-# --- LIGHT DIRECTION SELECTION---
+# --- LIGHT DIRECTION AND COLOR SELECTION---
 # ============================================================
+
 def get_light_direction(luminosity: float, rng: np.random.RandomState, distance: float = 10.0) -> np.ndarray:
     """
     Calcola una posizione casuale per la luce su una semisfera,
@@ -164,8 +165,35 @@ def get_light_direction(luminosity: float, rng: np.random.RandomState, distance:
         
     return np.array([x, y, z])
 
+def get_light_color_by_intensity(light_intensity: float) -> tuple:
+    """
+    Choose a light color based on intensity to mimic time of day progression.
+    
+    Args:
+        light_intensity (float): Light intensity value between 0.0 and 1.0
+        
+    Returns:
+        tuple: RGBA color tuple representing the time of day
+    """
+    # Clamp intensity to valid range
+    intensity = np.clip(light_intensity, 0.0, 1.0)
+    
+    # Define color transitions that mimic natural lighting throughout the day
+    if intensity >= 0.9:  # Noon - bright white
+        return (1.0, 1.0, 1.0, 1.0)
+    elif intensity >= 0.7:  # Mid-morning/afternoon - slightly warm white
+        return (1.0, 0.95, 0.85, 1.0)
+    elif intensity >= 0.5:  # Early morning/late afternoon - warm yellow
+        return (1.0, 0.9, 0.6, 1.0)
+    elif intensity >= 0.3:  # Golden hour - orange
+        return (1.0, 0.7, 0.3, 1.0)
+    elif intensity >= 0.1:  # Sunset/sunrise - deep orange-red
+        return (1.0, 0.5, 0.2, 1.0)
+    else:  # Night/twilight - very dim blue
+        return (0.3, 0.4, 0.8, 1.0)
+
 # ============================================================
-# --- cAMERA MOVEMENT FUNCTIONS---
+# --- CAMERA MOVEMENT FUNCTIONS---
 # ============================================================
 
 def get_linear_camera_motion_start_end(
@@ -205,9 +233,8 @@ def get_linear_lookat_motion_start_end(
         return camera_start, camera_end
 
 # ============================================================
-# --- PARSING DATI ---
+# --- PARSING DATA ---
 # ============================================================
-
 
 def parse_args():
     parser = kb.ArgumentParser()
@@ -235,11 +262,10 @@ def parse_args():
 
     return parser.parse_args()
 
+# ============================================================
+# --- COCO STYLE ANNOTATIONS ---
+# ============================================================
 
-# ============================================================
-# --- COCO Style Annotations ---       
-# ============================================================
-# La funzione initialize_coco_dict() rimane la stessa
 def initialize_coco_dict():
     """Crea la struttura di base, vuota, di un file di annotazioni COCO."""
     return {
@@ -369,253 +395,10 @@ def update_coco_from_metadata(coco_dict, kubric_metadata, seq_id, annotation_id,
     
     return coco_dict, annotation_id, next_image_id
 
-
-# ============================================================
-# --- FUNZIONE DI GENERAZIONE SEQUENZA --- DA Togliere
-# ============================================================
-
-def generate_sequence(seq_id: int, light_intensity: float, orientation: tuple, camera_position: tuple, light_color: tuple, FLAGS, output_root: Path = Path("output")):
-
-    scene, rng, output_dir, scratch_dir = kb.setup(FLAGS)
-    renderer = KubricBlender(scene, use_denoising=True, samples_per_pixel=64)
-    simulator = KubricSimulator(scene)
-
-
-    #--- Scene background HDRI ---
-    hdri_id = selector.pick(light_intensity)
-    print(f"🌅 Using HDRI: {hdri_id}")
-    background_hdri = HDRI_SOURCE.create(asset_id=hdri_id)
-    scene.metadata["background"] = hdri_id
-
-    # --- Usa le tue variabili 'light_intensity' e 'light_color' ---
-    logging.info(f"Using light intensity: {light_intensity:.2f}")
-    logging.info(f"Using light color: {light_color}")
-
-    # --- CALIBRAZIONE DELLA LUMINOSITÀ ---
-    LIGHT_SOURCE_GAMMA = 1.0
-    light_source_intensity = light_intensity ** LIGHT_SOURCE_GAMMA
-    BACKGROUND_GAMMA = 1.0
-    background_visual_intensity = light_intensity ** BACKGROUND_GAMMA
-    AMBIENT_LIGHT_FACTOR = 0.8
-    print(f"INFO: Intensità luce: {light_source_intensity:.4f} | Intensità sfondo: {background_visual_intensity:.4f} | Luce ambiente: {AMBIENT_LIGHT_FACTOR}")
-
-    # --- Luce ambientale del Mondo di Blender ---
-    world_background_node = bpy.context.scene.world.node_tree.nodes.get("Background")
-    if world_background_node:
-        # Usiamo direttamente la variabile light_color, che dovrebbe essere un RGBA
-        world_background_node.inputs["Color"].default_value = light_color
-        world_background_node.inputs["Strength"].default_value = AMBIENT_LIGHT_FACTOR * light_intensity
-        print("INFO: Luce ambientale del Mondo configurata con colore personalizzato.")
-
-    # --- Aggiungiamo un Sole ---
-    SUN_BASE_INTENSITY = 0.5
-    sun = kb.DirectionalLight(
-        name="sun",
-        position=(-1, -1, 3.0),
-        look_at=(0, 0, 0),
-        # Forniamo solo i primi 3 componenti (RGB)
-        color=light_color[:3],
-        intensity=SUN_BASE_INTENSITY * light_source_intensity
-    )
-    scene.add(sun)
-    print("INFO: Luce del Sole configurata con colore personalizzato.")
-
-    # --- Dome dello sfondo ---
-    dome = KUBASIC_SOURCE.create(asset_id="dome", name="dome", static=True, background=True)
-    scene += dome
-    dome_blender = dome.linked_objects[renderer]
-    texture_node_ref = dome_blender.data.materials[0].node_tree.nodes["Image Texture"]
-    texture_node_ref.image = bpy.data.images.load(background_hdri.filename)
-    material = dome_blender.data.materials[0]
-    node_tree = material.node_tree
-    texture_node = node_tree.nodes.get("Image Texture")
-
-    if texture_node:
-        if texture_node.outputs["Color"].links:
-            original_destinations = []
-            for link in texture_node.outputs["Color"].links:
-                original_destinations.append(link.to_socket)
-
-            for link in list(texture_node.outputs["Color"].links):
-                node_tree.links.remove(link)
-
-            color_dimmer_node = node_tree.nodes.new(type='ShaderNodeVectorMath')
-            color_dimmer_node.operation = 'MULTIPLY'
-
-            # --- MODIFICA CHIAVE ---
-            # Creiamo un nuovo vettore che combina il colore e l'intensità dello sfondo.
-            # Moltiplichiamo ogni componente di light_color per l'intensità.
-            bg_vec = [c * background_visual_intensity for c in light_color[:3]]
-            # -------------------------
-
-            color_dimmer_node.inputs[1].default_value = bg_vec
-
-            node_tree.links.new(texture_node.outputs["Color"], color_dimmer_node.inputs[0])
-
-            for dest_socket in original_destinations:
-                node_tree.links.new(node_tree.nodes["Vector Math"].outputs["Vector"], dest_socket)
-
-    
-    
-    # --- Camera ---
-    camera_mode = FLAGS.camera_mode
-    max_camera_speed = FLAGS.max_camera_movement
-    logging.info(f"🎥 Setting up Camera in '{camera_mode}' mode...")
-    print(f"🎥 Setting up Camera in '{FLAGS.camera_mode}' mode...")
-
-    scene.camera = kb.PerspectiveCamera(name="camera", focal_length=35., sensor_width=32)
-
-    if camera_mode == "fixed":
-        #scene.camera.position = kb.sample_point_in_half_sphere_shell(inner_radius=7., outer_radius=9., offset=0.1)
-        scene.camera.position = camera_position
-        scene.camera.look_at((0, 0, 0))
-        logging.info(f"Camera position fixed at {scene.camera.position}")
-
-    elif camera_mode == "linear_movement":
-        # Calcola una velocità casuale per questo movimento
-        speed = rng.uniform(0., max_camera_speed)
-        camera_start, camera_end = get_linear_camera_motion_start_end(movement_speed=speed)
-        logging.info(f"Camera will move from {camera_start} to {camera_end} with speed {speed:.2f}")
-
-        for frame in range(scene.frame_start, scene.frame_end + 1):
-            interp = (frame - scene.frame_start) / (scene.frame_end - scene.frame_start)
-            scene.camera.position = (1 - interp) * camera_start + interp * camera_end
-            scene.camera.look_at((0, 0, 0))
-            scene.camera.keyframe_insert("position", frame)
-            scene.camera.keyframe_insert("quaternion", frame)
-
-    elif camera_mode == "panning":
-        speed = rng.uniform(0., max_camera_speed)
-        camera_start, camera_end = get_linear_camera_motion_start_end(movement_speed=speed)
-        lookat_start, lookat_end = get_linear_lookat_motion_start_end()
-        logging.info(f"Camera will move from {camera_start} to {camera_end} with speed {speed:.2f}")
-        logging.info(f"Camera will pan from {lookat_start} to {lookat_end}")
-
-        for frame in range(scene.frame_start, scene.frame_end + 1):
-            interp = (frame - scene.frame_start) / (scene.frame_end - scene.frame_start)
-            scene.camera.position = (1 - interp) * camera_start + interp * camera_end
-            scene.camera.look_at((1 - interp) * lookat_start + interp * lookat_end)
-            scene.camera.keyframe_insert("position", frame)
-            scene.camera.keyframe_insert("quaternion", frame)
-
-
-
-
-
-    # === STATIC OBJECTS ===
-    num_static = rng.randint(MIN_STATIC, MAX_STATIC + 1)
-    print(f"📦 Generating {num_static} static objects...")
-    for idx in range(num_static):
-        random_class = rng.choice(classes_all)
-        shape_ids = chooseClass(random_class)
-        shape_id = rng.choice(shape_ids)
-        obj = ASSET_SOURCE.create(shape_id)
-        obj.segmentation_id = idx + 1  # Assign segmentation ID
-
-        scale = rng.uniform(0.75, 3.0)
-        obj.scale = scale / np.max(obj.bounds[1] - obj.bounds[0])  # Normalize scale
-        scene += obj
-        kb.move_until_no_overlap(obj, simulator, spawn_region=SPAWN_REGION_STATIC, rng=rng)
-        print(f"📦 Static object {shape_id} at {obj.position} with velocity {obj.velocity}")
-
-    print("Simulating to let objects settle...")
-    _, _ = simulator.run(frame_start=-100, frame_end=0)
-
-    print("Stopping any moving objects...")
-    # stop any objects that are still moving and reset friction / restitution
-    for obj in scene.foreground_assets:
-        if hasattr(obj, "velocity"):
-            obj.velocity = (0., 0., 0.)
-            obj.angular_velocity = (0., 0., 0.)
-            obj.friction = 0.5
-            obj.restitution = 0.5
-
-    # === DYNAMIC OBJECTS ===
-    num_dynamic = rng.randint(MIN_DYNAMIC, MAX_DYNAMIC + 1)
-    print(f"🚀 Generating {num_dynamic} dynamic objects...")
-    for idx in range(num_dynamic):
-        random_class = rng.choice(classes_all)
-        shape_ids = chooseClass(random_class)
-        shape_id = rng.choice(shape_ids)
-        obj = ASSET_SOURCE.create(shape_id)
-        obj.segmentation_id = num_static + idx + 1  # Unique ID
-        scale = rng.uniform(0.75, 3.0)
-        obj.scale = scale / np.max(obj.bounds[1] - obj.bounds[0])
-        scene += obj
-        kb.move_until_no_overlap(obj, simulator, spawn_region=SPAWN_REGION_DYNAMIC, rng=rng)
-        obj.velocity = (rng.uniform(*VELOCITY_RANGE) - [obj.position[0], obj.position[1], 0])
-        print(f"🚀 Dynamic object {shape_id} with velocity {obj.velocity} at position {obj.position}")
-
-    # === Simulation ===
-    print("🎬 Simulazione...")
-    animation, collisions = simulator.run(frame_start=0, frame_end=scene.frame_end)
-
-
-    # === Rendering ===
-    print("Saving state...")
-    renderer.save_state(output_root / f"states/seq{seq_id}.blend")
-    print("🎥 Rendering...")
-    frames_dict = renderer.render()
-
-
-    # --- Calcola visibilità e aggiusta segmentation ---
-    kb.compute_visibility(frames_dict["segmentation"], scene.assets)
-    frames_dict["segmentation"] = kb.adjust_segmentation_idxs(
-        frames_dict["segmentation"], scene.assets, [obj]).astype(np.uint8)
-
-    visible_foreground_assets = [asset for asset in scene.foreground_assets
-                                if np.max(asset.metadata["visibility"]) > 0]
-    visible_foreground_assets = sorted(  # sort assets by their visibility
-        visible_foreground_assets,
-        key=lambda asset: np.sum(asset.metadata["visibility"]),
-        reverse=True)
-
-    kb.post_processing.compute_bboxes(frames_dict["segmentation"],
-                                    visible_foreground_assets)
-
-    # === Saving frames ===
-    print(f"💾 Salvataggio frame per seq{seq_id}...")
-    for key in tqdm(frames_dict.keys(), desc=f"Scrittura Frame seq{seq_id}", unit="tipo"):
-        value = frames_dict[key]
-        base_dir = output_root / key / f"seq{seq_id}"
-        imgs_dir = base_dir / "imgs"
-        imgs_dir.mkdir(parents=True, exist_ok=True)
-
-        if key == "rgba":
-            writer_map["rgba"](value, imgs_dir)
-            rgb = value[..., :3]
-            rgb_base_dir = output_root / "rgb" / f"seq{seq_id}"
-            rgb_imgs_dir = rgb_base_dir / "imgs"
-            rgb_imgs_dir.mkdir(parents=True, exist_ok=True)
-            writer_map["rgb"](rgb, rgb_imgs_dir)
-            with open(rgb_base_dir / "fps.txt", "w") as f:
-                f.write(str(scene.frame_rate))
-
-        elif key in writer_map:
-            writer_map[key](value, imgs_dir)
-            with open(base_dir / "fps.txt", "w") as f:
-                f.write(str(scene.frame_rate))
-
-
-    # === Metadata ===
-    exclude_names = {"floor", "camera", "sun", "dome"}
-    scene_objects = [obj for obj in scene.assets if obj.name not in exclude_names]
-    data = {
-        "scene_metadata": kb.get_scene_metadata(scene),
-        "camera": kb.get_camera_info(scene.camera),
-        "object": kb.get_instance_info(scene, scene_objects)
-    }
-    annotations_dir = output_root / "annotations"
-    annotations_dir.mkdir(parents=True, exist_ok=True)
-    metadata_path = annotations_dir / f"seq{seq_id}_metadata.json"
-    kb.file_io.write_json(filename=metadata_path, data=data)
-    gc.collect()  # Garbage collection to free memory
-    return data  # Return metadata for COCO update
-
-
 # ============================================================
 # --- CHOOSE IDS ---
 # ============================================================
+
 def chooseClass(class_name):
     return [name for name, spec in ASSET_SOURCE._assets.items() if spec["metadata"]["category"] == class_name]
 
@@ -628,8 +411,9 @@ def get_seed():
     return int(time.time() * 1000) % 2**32
 
 # ============================================================
-# --- TEST SEED --- DA TENERE
+# --- SCENE GENERATION ---
 # ============================================================
+
 def generate_scene_layout(seed: int, FLAGS):
     """
     Usa un seed per generare una lista di oggetti con le loro proprietà 
@@ -650,50 +434,116 @@ def generate_scene_layout(seed: int, FLAGS):
     # === 1. Posizionamento Iniziale Oggetti Statici ===
     num_static = rng.randint(MIN_STATIC, MAX_STATIC + 1)
     print(f"  📦 Generating {num_static} static objects...")
+    
     for idx in range(num_static):
-        random_class = rng.choice(classes_all)
-        shape_ids = chooseClass(random_class)
-        shape_id = rng.choice(shape_ids)
-        
-        obj = ASSET_SOURCE.create(shape_id)
-        scale = rng.uniform(0.75, 3.0)
-        obj.scale = scale / np.max(obj.bounds[1] - obj.bounds[0])
-        
-        temp_scene += obj
-        kb.move_until_no_overlap(obj, simulator, spawn_region=SPAWN_REGION_STATIC, rng=rng)
-        
-        layout_data.append({
-            "asset_id": obj.asset_id, "segmentation_id": idx + 1,
-            "position": tuple(obj.position), "quaternion": tuple(obj.quaternion),
-            "scale": tuple(obj.scale), "static": True
-        })
+        oggetto_posizionato_con_successo = False
+        max_retries = 5
 
-    # === 4. Posizionamento Oggetti Dinamici ===
+        for attempt in range(max_retries):
+            # Ad ogni tentativo, scegliamo un oggetto NUOVO
+            random_class = rng.choice(classes_all)
+            shape_ids = chooseClass(random_class)
+            shape_id = rng.choice(shape_ids)
+            
+            obj = ASSET_SOURCE.create(shape_id)
+            scale = rng.uniform(0.75, 3.0)
+            obj.scale = scale / np.max(obj.bounds[1] - obj.bounds[0])
+            
+            try:
+                # Tentiamo di posizionare il nuovo oggetto
+                kb.move_until_no_overlap(
+                    obj, 
+                    simulator, 
+                    spawn_region=SPAWN_REGION_STATIC, 
+                    max_trials=200,
+                    rng=rng
+                )
+                
+                # --- SUCCESSO ---
+                # 1. Aggiungi l'oggetto alla scena temporanea
+                temp_scene += obj
+                
+                # 2. Salva i suoi dati direttamente in layout_data
+                layout_data.append({
+                    "asset_id": obj.asset_id, 
+                    "segmentation_id": idx + 1,
+                    "position": tuple(obj.position), 
+                    "quaternion": tuple(obj.quaternion),
+                    "scale": tuple(obj.scale), 
+                    "static": True
+                })
+
+                oggetto_posizionato_con_successo = True
+                
+                # 3. Esci dal ciclo dei tentativi e passa al prossimo oggetto
+                break 
+
+            except RuntimeError:
+                print(f"ATTENZIONE: Tentativo {attempt + 1}/{max_retries} fallito per l'oggetto {shape_id}.")
+
+        if not oggetto_posizionato_con_successo:
+            print(f"AVVISO FINALE: Impossibile posizionare un oggetto statico nello slot #{idx+1} dopo {max_retries} tentativi.")
+
+
+    # === 4. Posizionamento Oggetti Dinamici con Logica di Retry ===
     num_dynamic = rng.randint(MIN_DYNAMIC, MAX_DYNAMIC + 1)
-    print(f"  📦 Generating {num_dynamic} dynamic objects...")
+    print(f"  🚀 Generating {num_dynamic} dynamic objects...")
+
     for idx in range(num_dynamic):
-        random_class = rng.choice(classes_all)
-        shape_ids = chooseClass(random_class)
-        shape_id = rng.choice(shape_ids)
+        oggetto_posizionato_con_successo = False
+        max_retries = 5  # Numero di tentativi per questo slot
 
-        obj = ASSET_SOURCE.create(shape_id)
-        scale = rng.uniform(0.75, 3.0)
-        obj.scale = scale / np.max(obj.bounds[1] - obj.bounds[0])
+        for attempt in range(max_retries):
+            # Ad ogni tentativo, scegliamo un oggetto NUOVO
+            random_class = rng.choice(classes_all)
+            shape_ids = chooseClass(random_class)
+            shape_id = rng.choice(shape_ids)
 
-        temp_scene += obj
-        kb.move_until_no_overlap(obj, simulator, spawn_region=SPAWN_REGION_DYNAMIC, rng=rng)
-        velocity = (rng.uniform(*VELOCITY_RANGE) - [obj.position[0], obj.position[1], 0])
-        
-        layout_data.append({
-            "asset_id": obj.asset_id, "segmentation_id": num_static + idx + 1,
-            "position": tuple(obj.position), "quaternion": tuple(obj.quaternion),
-            "scale": tuple(obj.scale), "velocity": tuple(velocity),
-            "angular_velocity": (0., 0., 0.), "static": False
-        })
+            obj = ASSET_SOURCE.create(shape_id)
+            scale = rng.uniform(0.75, 3.0)
+            obj.scale = scale / np.max(obj.bounds[1] - obj.bounds[0])
+
+            try:
+                # Tentiamo di posizionare il nuovo oggetto
+                kb.move_until_no_overlap(
+                    obj,
+                    simulator,
+                    spawn_region=SPAWN_REGION_DYNAMIC,
+                    max_trials=200,
+                    rng=rng
+                )
+
+                # --- SUCCESSO ---
+                # 1. Aggiungi l'oggetto alla scena temporanea
+                temp_scene += obj
+
+                # 2. Calcola la velocità e salva i dati direttamente in layout_data
+                velocity = (rng.uniform(*VELOCITY_RANGE) - [obj.position[0], obj.position[1], 0])
+                
+                layout_data.append({
+                    "asset_id": obj.asset_id,
+                    "segmentation_id": num_static + idx + 1,
+                    "position": tuple(obj.position),
+                    "quaternion": tuple(obj.quaternion),
+                    "scale": tuple(obj.scale),
+                    "velocity": tuple(velocity),
+                    "angular_velocity": (0., 0., 0.),
+                    "static": False
+                })
+
+                oggetto_posizionato_con_successo = True
+                
+                # 3. Esci dal ciclo dei tentativi e passa al prossimo oggetto
+                break
+
+            except RuntimeError:
+                print(f"ATTENZIONE: Tentativo {attempt + 1}/{max_retries} fallito per l'oggetto dinamico {shape_id}.")
+
+        if not oggetto_posizionato_con_successo:
+            print(f"AVVISO FINALE: Impossibile posizionare un oggetto dinamico nello slot #{idx+1} dopo {max_retries} tentativi.")
         
     print(f"  -> Lista di spawn per {len(layout_data)} oggetti creata.")
     return layout_data
-
 
 def render_variation(seq_id: int, layout_data: list, light_intensity: float, orientation: tuple, camera_position: tuple, light_color: tuple, FLAGS, output_root: Path = Path("output")):
     """Crea una scena, la popola, imposta i parametri della variazione (camera, luci) e include la logica completa per dome, HDRI, rendering e salvataggio."""
@@ -735,6 +585,7 @@ def render_variation(seq_id: int, layout_data: list, light_intensity: float, ori
     # --- Aggiungiamo un Sole ---
     SUN_BASE_INTENSITY = 0.25
     sun_pos = get_light_direction(light_intensity, rng)
+    light_color = get_light_color_by_intensity(light_intensity)
     sun = kb.DirectionalLight(
         name="sun",
         position=sun_pos,
@@ -908,7 +759,6 @@ def render_variation(seq_id: int, layout_data: list, light_intensity: float, ori
     gc.collect()
     return data
 
-
 def clean_blender_scene():
     """
     Forza la pulizia completa della scena di Blender, rimuovendo tutti i dati.
@@ -1072,8 +922,6 @@ def total_random_run_mode(seq_id, args, output_root, coco_data, annotation_id_co
         seq_id += 1
     return coco_data, annotation_id_counter, image_id_counter, seq_id
 
-
-
 # ============================================================
 # --- MAIN ---
 # ============================================================
@@ -1106,10 +954,8 @@ def main():
         # Caso: lista di stringhe già separata
         return [str(x) for x in lst]
 
-
     # -- number of sequences
     num_sequences = args.sequences
-
 
     # -- light_levels
     raw_levels = _normalize_list_arg(args.light_levels)
@@ -1167,12 +1013,12 @@ def main():
     print("INFO: Inizializzazione dell'ambiente Kubric (Bootstrap)...")
     kb.setup(args) 
     clean_blender_scene()
-    # print("Standard mode run.....")
-    # coco_data, annotation_id_counter, image_id_counter, seq_id = standard_run_mode(seq_id, num_sequences, light_levels, light_orientations, camera_positions, light_colors, output_root, args, coco_data, annotation_id_counter, image_id_counter)
-    print("Scene mode run.....")
-    coco_data, annotation_id_counter, image_id_counter, seq_id = scene_run_mode(seq_id, args, output_root, coco_data, annotation_id_counter, image_id_counter)
-    #print("Total random mode run.....")
-    #coco_data, annotation_id_counter, image_id_counter, seq_id = total_random_mode(seq_id, args, output_root, coco_data, annotation_id_counter, image_id_counter)
+    print("Standard mode run.....")
+    coco_data, annotation_id_counter, image_id_counter, seq_id = standard_run_mode(seq_id, num_sequences, light_levels, light_orientations, camera_positions, light_colors, output_root, args, coco_data, annotation_id_counter, image_id_counter)
+    # print("Scene mode run.....")
+    # coco_data, annotation_id_counter, image_id_counter, seq_id = scene_run_mode(seq_id, args, output_root, coco_data, annotation_id_counter, image_id_counter)
+    # print("Total random mode run.....")
+    # coco_data, annotation_id_counter, image_id_counter, seq_id = total_random_mode(seq_id, args, output_root, coco_data, annotation_id_counter, image_id_counter)
     annotations_path = output_root / "annotations.json"
     kb.file_io.write_json(filename=annotations_path, data=coco_data)
     print(f"\n✅ Annotazioni COCO salvate in: '{annotations_path}'")
