@@ -29,11 +29,6 @@ class HDRISelector:
         """
         self.source = source
         self.json_path = json_path
-        
-        # --- MODIFICA CORRETTA ---
-        # Il tuo codice originale usava `source._assets` per accedere al dizionario degli asset.
-        # La logica migliorata ha bisogno di un `set` degli ID disponibili per un controllo rapido.
-        # Questa riga corregge l'errore `AttributeError` e prepara i dati correttamente.
         self.available_asset_ids = set(source._assets.keys()) if source and hasattr(source, '_assets') else set()
         
         self.hdri_data = {}
@@ -60,11 +55,8 @@ class HDRISelector:
             raw_score = (ev_score * 3) + tag_score
             self.hdri_data[hdri_id] = {"raw_score": raw_score}
 
-        # Normalizziamo i punteggi in un intervallo [0, 1]
         all_scores = [d["raw_score"] for d in self.hdri_data.values()]
         
-        # --- MODIFICA DI ROBUSTEZZA ---
-        # Aggiunto un controllo per evitare errori se il JSON è vuoto o non contiene punteggi.
         if not all_scores:
             logging.warning("Nessun punteggio calcolato dal file JSON. La normalizzazione non può essere eseguita.")
             return
@@ -88,9 +80,6 @@ class HDRISelector:
         """
         if not (0.0 <= luminosity <= 1.0):
             raise ValueError("La luminosità deve essere compresa tra 0 e 1.")
-            
-        # --- MODIFICA PER LA RIPRODUCIBILITÀ ---
-        # Usa l'RNG fornito se presente, altrimenti il modulo `random` di default.
         choice_fn = rng.choice if rng else random.choice
 
         candidates = {
