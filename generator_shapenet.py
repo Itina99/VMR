@@ -437,10 +437,10 @@ def generate_scene_layout(seed: int, FLAGS):
     
     for idx in range(num_static):
         oggetto_posizionato_con_successo = False
-        max_retries = 5
+        max_retries = 5  # Prova fino a 5 volte a riempire questo "slot"
 
         for attempt in range(max_retries):
-            # Ad ogni tentativo, scegliamo un oggetto NUOVO
+            # Ad ogni tentativo, scegliamo e creiamo un oggetto NUOVO
             random_class = rng.choice(classes_all)
             shape_ids = chooseClass(random_class)
             shape_id = rng.choice(shape_ids)
@@ -449,8 +449,11 @@ def generate_scene_layout(seed: int, FLAGS):
             scale = rng.uniform(0.75, 3.0)
             obj.scale = scale / np.max(obj.bounds[1] - obj.bounds[0])
             
+            # Aggiungi l'oggetto alla scena PRIMA di tentare il posizionamento
+            temp_scene += obj
+            
             try:
-                # Tentiamo di posizionare il nuovo oggetto
+                # Tentiamo di posizionare l'oggetto
                 kb.move_until_no_overlap(
                     obj, 
                     simulator, 
@@ -460,10 +463,7 @@ def generate_scene_layout(seed: int, FLAGS):
                 )
                 
                 # --- SUCCESSO ---
-                # 1. Aggiungi l'oggetto alla scena temporanea
-                temp_scene += obj
-                
-                # 2. Salva i suoi dati direttamente in layout_data
+                # Salva i dati dell'oggetto e segnala il successo
                 layout_data.append({
                     "asset_id": obj.asset_id, 
                     "segmentation_id": idx + 1,
@@ -472,29 +472,29 @@ def generate_scene_layout(seed: int, FLAGS):
                     "scale": tuple(obj.scale), 
                     "static": True
                 })
-
                 oggetto_posizionato_con_successo = True
                 
-                # 3. Esci dal ciclo dei tentativi e passa al prossimo oggetto
+                # Esci dal ciclo dei tentativi e passa allo slot successivo
                 break 
 
             except RuntimeError:
-                print(f"ATTENZIONE: Tentativo {attempt + 1}/{max_retries} fallito per l'oggetto {shape_id}.")
-
+                print(f"    ATTENZIONE: Tentativo {attempt + 1}/{max_retries} fallito per l'oggetto {shape_id}.")
+                # Se il posizionamento fallisce, RIMUOVI l'oggetto dalla scena prima del prossimo tentativo
+                temp_scene -= obj
+        
         if not oggetto_posizionato_con_successo:
-            print(f"AVVISO FINALE: Impossibile posizionare un oggetto statico nello slot #{idx+1} dopo {max_retries} tentativi.")
+            print(f"    AVVISO FINALE: Impossibile posizionare un oggetto statico nello slot #{idx+1} dopo {max_retries} tentativi.")
 
-
-    # === 4. Posizionamento Oggetti Dinamici con Logica di Retry ===
+    # === 2. Posizionamento Oggetti Dinamici con Logica di Retry ===
     num_dynamic = rng.randint(MIN_DYNAMIC, MAX_DYNAMIC + 1)
-    print(f"  🚀 Generating {num_dynamic} dynamic objects...")
-
+    print(f"  🚀 Generating up to {num_dynamic} dynamic objects...")
+    
     for idx in range(num_dynamic):
         oggetto_posizionato_con_successo = False
-        max_retries = 5  # Numero di tentativi per questo slot
+        max_retries = 5
 
         for attempt in range(max_retries):
-            # Ad ogni tentativo, scegliamo un oggetto NUOVO
+            # Ad ogni tentativo, scegliamo e creiamo un oggetto NUOVO
             random_class = rng.choice(classes_all)
             shape_ids = chooseClass(random_class)
             shape_id = rng.choice(shape_ids)
@@ -502,9 +502,12 @@ def generate_scene_layout(seed: int, FLAGS):
             obj = ASSET_SOURCE.create(shape_id)
             scale = rng.uniform(0.75, 3.0)
             obj.scale = scale / np.max(obj.bounds[1] - obj.bounds[0])
+            
+            # Aggiungi l'oggetto alla scena PRIMA di tentare il posizionamento
+            temp_scene += obj
 
             try:
-                # Tentiamo di posizionare il nuovo oggetto
+                # Tentiamo di posizionare l'oggetto
                 kb.move_until_no_overlap(
                     obj,
                     simulator,
@@ -514,10 +517,7 @@ def generate_scene_layout(seed: int, FLAGS):
                 )
 
                 # --- SUCCESSO ---
-                # 1. Aggiungi l'oggetto alla scena temporanea
-                temp_scene += obj
-
-                # 2. Calcola la velocità e salva i dati direttamente in layout_data
+                # Calcola la velocità e salva i dati
                 velocity = (rng.uniform(*VELOCITY_RANGE) - [obj.position[0], obj.position[1], 0])
                 
                 layout_data.append({
@@ -530,19 +530,20 @@ def generate_scene_layout(seed: int, FLAGS):
                     "angular_velocity": (0., 0., 0.),
                     "static": False
                 })
-
                 oggetto_posizionato_con_successo = True
                 
-                # 3. Esci dal ciclo dei tentativi e passa al prossimo oggetto
+                # Esci dal ciclo dei tentativi e passa allo slot successivo
                 break
 
             except RuntimeError:
-                print(f"ATTENZIONE: Tentativo {attempt + 1}/{max_retries} fallito per l'oggetto dinamico {shape_id}.")
+                print(f"    ATTENZIONE: Tentativo {attempt + 1}/{max_retries} fallito per l'oggetto dinamico {shape_id}.")
+                # Se il posizionamento fallisce, RIMUOVI l'oggetto dalla scena
+                temp_scene -= obj
 
         if not oggetto_posizionato_con_successo:
-            print(f"AVVISO FINALE: Impossibile posizionare un oggetto dinamico nello slot #{idx+1} dopo {max_retries} tentativi.")
-        
-    print(f"  -> Lista di spawn per {len(layout_data)} oggetti creata.")
+            print(f"    AVVISO FINALE: Impossibile posizionare un oggetto dinamico nello slot #{idx+1} dopo {max_retries} tentativi.")
+            
+    print(f"  -> Lista di spawn per {len(layout_data)} oggetti creata con successo.")
     return layout_data
 
 def render_variation(seq_id: int, layout_data: list, light_intensity: float, orientation: tuple, camera_position: tuple, light_color: tuple, FLAGS, output_root: Path = Path("output")):
