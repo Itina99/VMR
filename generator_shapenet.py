@@ -185,7 +185,7 @@ def get_light_color_by_intensity(light_intensity: float) -> tuple:
         return (1.0, 0.95, 0.85, 1.0)
     elif intensity >= 0.5:  # Early morning/late afternoon - warm yellow
         return (1.0, 0.9, 0.6, 1.0)
-    elif intensity >= 0.3:  # Golden hour - orange
+    elif intensity >= 0.25:  # Golden hour - orange
         return (1.0, 0.7, 0.3, 1.0)
     elif intensity >= 0.1:  # Sunset/sunrise - deep orange-red
         return (1.0, 0.5, 0.2, 1.0)
@@ -544,6 +544,7 @@ def generate_scene_layout(seed: int, FLAGS):
             print(f"    AVVISO FINALE: Impossibile posizionare un oggetto dinamico nello slot #{idx+1} dopo {max_retries} tentativi.")
             
     print(f"  -> Lista di spawn per {len(layout_data)} oggetti creata con successo.")
+    gc.collect()
     return layout_data
 
 def render_variation(seq_id: int, layout_data: list, light_intensity: float, orientation: tuple, camera_position: tuple, light_color: tuple, FLAGS, output_root: Path = Path("output")):
@@ -570,7 +571,7 @@ def render_variation(seq_id: int, layout_data: list, light_intensity: float, ori
     # --- CALIBRAZIONE DELLA LUMINOSITÀ ---
     LIGHT_SOURCE_GAMMA = 2.2
     light_source_intensity = light_intensity ** LIGHT_SOURCE_GAMMA
-    BACKGROUND_GAMMA = 2.2
+    BACKGROUND_GAMMA = 1.6
     background_visual_intensity = light_intensity ** BACKGROUND_GAMMA
     AMBIENT_LIGHT_FACTOR = 0.1
     print(f"INFO: Intensità luce: {light_source_intensity:.4f} | Intensità sfondo: {background_visual_intensity:.4f} | Luce ambiente: {AMBIENT_LIGHT_FACTOR}")

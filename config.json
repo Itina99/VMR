@@ -1,6 +1,6 @@
 {
-    "sequence_number": 1,
-    "light_levels": [1.0, 0.5, 0.25],
+    "sequence_number": 2,
+    "light_levels": [1.0, 0.5], 
     "light_orientations": {
         "side_45": [0.0, 0.0, 0.78539]
 

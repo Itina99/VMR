@@ -4,9 +4,9 @@ import argparse
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Upsample RGB frames")
-    parser.add_argument("--input-dir", default="output/cleaned_rgb", 
+    parser.add_argument("--input_dir", default="output/cleaned_rgb", 
                        help="Input directory containing RGB sequences")
-    parser.add_argument("--output-dir", default="output/upsampled_rgb",
+    parser.add_argument("--output_dir", default="output/upsampled_rgb",
                        help="Output directory for upsampled frames")
     return parser.parse_args()
 
