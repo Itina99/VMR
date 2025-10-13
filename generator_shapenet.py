@@ -88,7 +88,7 @@ classes_all = ["airplane", "ashcan", "bag", "basket", "bathtub", "bed", "bench",
 light_levels_all = [0.0, 0.25, 0.5, 0.75, 1.0]  # 0–100%
 
 light_orientations_all = {
-    "front": (0., 0., 0.),
+    #"front": (0., 0., 0.),
     "side_45": (0., 0., np.pi/4),
     "side_90": (0., 0., np.pi/2),
     "back_135": (0., 0., 3*np.pi/4),

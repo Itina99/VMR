@@ -84,7 +84,7 @@ class HDRISelector:
 
         candidates = {
             hdri_id: data for hdri_id, data in self.hdri_data.items()
-            if hdri_id in self.available_asset_ids and "norm_brightness" in data
+            if hdri_id in self.available_asset_ids and "norm_brightness" in data and hdri_id != "crystal_fall"
         }
         
         if not candidates:
