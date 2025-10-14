@@ -56,12 +56,13 @@ RESOLUTION = (256, 256)
 FRAME_END = 24
 FRAME_RATE = 12
 STEP_RATE = 240
-MIN_STATIC, MAX_STATIC = 1, 2
-MIN_DYNAMIC, MAX_DYNAMIC = 1, 2
+MIN_STATIC, MAX_STATIC = 1, 3
+MIN_DYNAMIC, MAX_DYNAMIC = 1, 3
 SPAWN_REGION_STATIC = [[-5, -5, 0], [5, 5, 0]]
 SPAWN_REGION_DYNAMIC = [[-5, -5, 1], [5, 5, 6]]
 VELOCITY_RANGE = [(-4., -4., 0.), (4., 4., 0.)]
-CAMERA_TYPES = ["fixed"]
+#CAMERA_TYPES = ["fixed", "linear_movement", "panning"]
+CAMERA_TYPES= ["fixed"]
 MAX_CAMERA_MOVEMENT = 4.0
 
 # Percorsi ai manifest
@@ -85,7 +86,7 @@ selector = HDRISelector(source=HDRI_SOURCE, json_path="hdri.json")
 shape_ids = sorted(ASSET_SOURCE._assets.keys())
 classes_all = ["airplane", "ashcan", "bag", "basket", "bathtub", "bed", "bench", "birdhouse", "bookshelf", "bottle", "bowl", "bus", "cabinet", "camera", "can", "cap", "car", "cellular telephone", "chair", "clock", "computer keyboard", "dishwasher", "display", "earphone", "faucet", "file", "guitar", "helmet", "jar", "knife", "lamp", "laptop", "loudspeaker", "mailbox", "microphone", "microwave", "motorcycle", "mug", "piano", "pillow", "pistol", "pot", "printer", "remote control", "rifle", "rocket", "skateboard", "sofa", "stove", "table", "telephone", "tower", "train", "vessel", "washer"]
 
-light_levels_all = [0.0, 0.25, 0.5, 0.75, 1.0]  # 0–100%
+light_levels_all = [0.25, 0.5, 0.75, 1.0]  # 0–100%
 
 light_orientations_all = {
     #"front": (0., 0., 0.),
@@ -196,12 +197,7 @@ def get_light_color_by_intensity(light_intensity: float) -> tuple:
 # --- CAMERA MOVEMENT FUNCTIONS---
 # ============================================================
 
-def get_linear_camera_motion_start_end(
-    movement_speed: float,
-    inner_radius: float = 7.,
-    outer_radius: float = 9.,
-    z_offset: float = 0.1,
-):
+def get_linear_camera_motion_start_end(movement_speed: float, inner_radius: float = 7., outer_radius: float = 9., z_offset: float = 0.1):
     """Sample a linear path which starts and ends within a half-sphere shell."""
     while True:
         camera_start = np.array(kb.sample_point_in_half_sphere_shell(
@@ -213,10 +209,7 @@ def get_linear_camera_motion_start_end(
                 camera_end[2] > z_offset):
             return camera_start, camera_end
 
-def get_linear_lookat_motion_start_end(
-    inner_radius: float = 0.5,
-    outer_radius: float = 2.0,
-):
+def get_linear_lookat_motion_start_end(inner_radius: float = 0.5, outer_radius: float = 2.0):
     """Sample a linear path for the look-at point."""
     while True:
         camera_through = np.array(
@@ -480,7 +473,7 @@ def generate_scene_layout(seed: int, FLAGS):
             except RuntimeError:
                 print(f"    ATTENZIONE: Tentativo {attempt + 1}/{max_retries} fallito per l'oggetto {shape_id}.")
                 # Se il posizionamento fallisce, RIMUOVI l'oggetto dalla scena prima del prossimo tentativo
-                temp_scene -= obj
+                temp_scene.remove(obj)
         
         if not oggetto_posizionato_con_successo:
             print(f"    AVVISO FINALE: Impossibile posizionare un oggetto statico nello slot #{idx+1} dopo {max_retries} tentativi.")
@@ -538,7 +531,7 @@ def generate_scene_layout(seed: int, FLAGS):
             except RuntimeError:
                 print(f"    ATTENZIONE: Tentativo {attempt + 1}/{max_retries} fallito per l'oggetto dinamico {shape_id}.")
                 # Se il posizionamento fallisce, RIMUOVI l'oggetto dalla scena
-                temp_scene -= obj
+                temp_scene.remove(obj)
 
         if not oggetto_posizionato_con_successo:
             print(f"    AVVISO FINALE: Impossibile posizionare un oggetto dinamico nello slot #{idx+1} dopo {max_retries} tentativi.")
@@ -905,7 +898,7 @@ def scene_run_mode(seq_id, args, output_root, coco_data, annotation_id_counter, 
 
 def total_random_run_mode(seq_id, args, output_root, coco_data, annotation_id_counter, image_id_counter):
     #Fully random setup for each sequence
-    for i in range(10):
+    for i in range(4):
         print(f"Random run mode - sequence {seq_id}")
         seed = get_seed()
         layout_data = generate_scene_layout(seed, args)
@@ -1015,12 +1008,12 @@ def main():
     print("INFO: Inizializzazione dell'ambiente Kubric (Bootstrap)...")
     kb.setup(args) 
     clean_blender_scene()
-    print("Standard mode run.....")
-    coco_data, annotation_id_counter, image_id_counter, seq_id = standard_run_mode(seq_id, num_sequences, light_levels, light_orientations, camera_positions, light_colors, output_root, args, coco_data, annotation_id_counter, image_id_counter)
+    # print("Standard mode run.....")
+    # coco_data, annotation_id_counter, image_id_counter, seq_id = standard_run_mode(seq_id, num_sequences, light_levels, light_orientations, camera_positions, light_colors, output_root, args, coco_data, annotation_id_counter, image_id_counter)
     # print("Scene mode run.....")
     # coco_data, annotation_id_counter, image_id_counter, seq_id = scene_run_mode(seq_id, args, output_root, coco_data, annotation_id_counter, image_id_counter)
-    # print("Total random mode run.....")
-    # coco_data, annotation_id_counter, image_id_counter, seq_id = total_random_mode(seq_id, args, output_root, coco_data, annotation_id_counter, image_id_counter)
+    print("Total random mode run.....")
+    coco_data, annotation_id_counter, image_id_counter, seq_id = total_random_run_mode(seq_id, args, output_root, coco_data, annotation_id_counter, image_id_counter)
     annotations_path = output_root / "annotations.json"
     kb.file_io.write_json(filename=annotations_path, data=coco_data)
     print(f"\n✅ Annotazioni COCO salvate in: '{annotations_path}'")
