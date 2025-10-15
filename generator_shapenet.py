@@ -61,8 +61,8 @@ MIN_DYNAMIC, MAX_DYNAMIC = 1, 3
 SPAWN_REGION_STATIC = [[-5, -5, 0], [5, 5, 0]]
 SPAWN_REGION_DYNAMIC = [[-5, -5, 1], [5, 5, 6]]
 VELOCITY_RANGE = [(-4., -4., 0.), (4., 4., 0.)]
-#CAMERA_TYPES = ["fixed", "linear_movement", "panning"]
-CAMERA_TYPES= ["fixed"]
+CAMERA_TYPES = ["fixed", "linear_movement", "panning"]
+#CAMERA_TYPES= ["fixed"]
 MAX_CAMERA_MOVEMENT = 4.0
 
 # Percorsi ai manifest
@@ -93,19 +93,14 @@ light_orientations_all = {
     "side_45": (0., 0., np.pi/4),
     "side_90": (0., 0., np.pi/2),
     "back_135": (0., 0., 3*np.pi/4),
-    "top": (np.pi/2, 0., 0.),
-    #"bottom": (-np.pi/2, 0., 0.)
-}
+    "top": (np.pi/2, 0., 0.),}
 
 camera_positions_all = {
-    "front": (0, -8, 0),            # 0° frontale no con luce 0
     "tilt_30": (4, -7, 3),          # 30° inclinata no con luce 0
     "tilt_60": (7, -4, 5),          # 60° obliqua si con luce 0
-    "side_90": (8, 0, 0),           # 90° laterale puro no con luce 0
     "retro_120": (7, 4, 3),         # 120° retro-inclinata no con luce 0
-    "back_180": (0, 8, 0),          # 180° dietro nope
     "top": (0, 0, 8),               # zenitale si vede l'oggetto troppo
-    #"bottom": (0, 0, -8),           # vista dal basso questo è ok 
+
 }
 light_colors_all = {
     "white":   (1.0, 1.0, 1.0, 1.0),
@@ -433,20 +428,30 @@ def generate_scene_layout(seed: int, FLAGS):
         max_retries = 5  # Prova fino a 5 volte a riempire questo "slot"
 
         for attempt in range(max_retries):
-            # Ad ogni tentativo, scegliamo e creiamo un oggetto NUOVO
+            # Ad ogni tentativo, scegliamo un oggetto NUOVO
             random_class = rng.choice(classes_all)
             shape_ids = chooseClass(random_class)
             shape_id = rng.choice(shape_ids)
             
-            obj = ASSET_SOURCE.create(shape_id)
+            # --- NUOVO BLOCCO TRY...EXCEPT PER LA CREAZIONE DELL'OGGETTO --- ✅
+            try:
+                # Tentiamo di creare l'oggetto. È qui che può verificarsi l'errore di massa.
+                obj = ASSET_SOURCE.create(shape_id)
+
+            except kb.core.traitlets.TraitError as e:
+                # Se la creazione fallisce a causa di una mesh problematica (massa negativa),
+                # lo intercettiamo, stampiamo un avviso e passiamo al prossimo tentativo.
+                print(f"    AVVISO MASSA: Tentativo {attempt + 1}/{max_retries} fallito. L'oggetto {shape_id} ha una mesh problematica. Riprovo con un altro oggetto.")
+                continue  # 🔄 Salta al prossimo 'attempt' per scegliere un nuovo oggetto
+            # --- FINE BLOCCO NUOVO ---
+
             scale = rng.uniform(0.75, 3.0)
             obj.scale = scale / np.max(obj.bounds[1] - obj.bounds[0])
             
-            # Aggiungi l'oggetto alla scena PRIMA di tentare il posizionamento
             temp_scene += obj
             
             try:
-                # Tentiamo di posizionare l'oggetto
+                # Ora che l'oggetto è stato creato con successo, tentiamo di posizionarlo
                 kb.move_until_no_overlap(
                     obj, 
                     simulator, 
@@ -456,7 +461,6 @@ def generate_scene_layout(seed: int, FLAGS):
                 )
                 
                 # --- SUCCESSO ---
-                # Salva i dati dell'oggetto e segnala il successo
                 layout_data.append({
                     "asset_id": obj.asset_id, 
                     "segmentation_id": idx + 1,
@@ -466,13 +470,10 @@ def generate_scene_layout(seed: int, FLAGS):
                     "static": True
                 })
                 oggetto_posizionato_con_successo = True
-                
-                # Esci dal ciclo dei tentativi e passa allo slot successivo
                 break 
 
             except RuntimeError:
-                print(f"    ATTENZIONE: Tentativo {attempt + 1}/{max_retries} fallito per l'oggetto {shape_id}.")
-                # Se il posizionamento fallisce, RIMUOVI l'oggetto dalla scena prima del prossimo tentativo
+                print(f"    AVVISO POSIZIONAMENTO: Tentativo {attempt + 1}/{max_retries} fallito per l'oggetto {shape_id}.")
                 temp_scene.remove(obj)
         
         if not oggetto_posizionato_con_successo:
@@ -487,20 +488,24 @@ def generate_scene_layout(seed: int, FLAGS):
         max_retries = 5
 
         for attempt in range(max_retries):
-            # Ad ogni tentativo, scegliamo e creiamo un oggetto NUOVO
             random_class = rng.choice(classes_all)
             shape_ids = chooseClass(random_class)
             shape_id = rng.choice(shape_ids)
 
-            obj = ASSET_SOURCE.create(shape_id)
+            # --- NUOVO BLOCCO TRY...EXCEPT PER LA CREAZIONE DELL'OGGETTO --- ✅
+            try:
+                obj = ASSET_SOURCE.create(shape_id)
+            except kb.core.traitlets.TraitError as e:
+                print(f"    AVVISO MASSA: Tentativo {attempt + 1}/{max_retries} fallito. L'oggetto {shape_id} ha una mesh problematica. Riprovo con un altro oggetto.")
+                continue # 🔄 Salta al prossimo 'attempt' per scegliere un nuovo oggetto
+            # --- FINE BLOCCO NUOVO ---
+            
             scale = rng.uniform(0.75, 3.0)
             obj.scale = scale / np.max(obj.bounds[1] - obj.bounds[0])
             
-            # Aggiungi l'oggetto alla scena PRIMA di tentare il posizionamento
             temp_scene += obj
 
             try:
-                # Tentiamo di posizionare l'oggetto
                 kb.move_until_no_overlap(
                     obj,
                     simulator,
@@ -510,9 +515,7 @@ def generate_scene_layout(seed: int, FLAGS):
                 )
 
                 # --- SUCCESSO ---
-                # Calcola la velocità e salva i dati
                 velocity = (rng.uniform(*VELOCITY_RANGE) - [obj.position[0], obj.position[1], 0])
-                
                 layout_data.append({
                     "asset_id": obj.asset_id,
                     "segmentation_id": num_static + idx + 1,
@@ -524,13 +527,10 @@ def generate_scene_layout(seed: int, FLAGS):
                     "static": False
                 })
                 oggetto_posizionato_con_successo = True
-                
-                # Esci dal ciclo dei tentativi e passa allo slot successivo
                 break
 
             except RuntimeError:
-                print(f"    ATTENZIONE: Tentativo {attempt + 1}/{max_retries} fallito per l'oggetto dinamico {shape_id}.")
-                # Se il posizionamento fallisce, RIMUOVI l'oggetto dalla scena
+                print(f"    AVVISO POSIZIONAMENTO: Tentativo {attempt + 1}/{max_retries} fallito per l'oggetto dinamico {shape_id}.")
                 temp_scene.remove(obj)
 
         if not oggetto_posizionato_con_successo:
@@ -898,7 +898,7 @@ def scene_run_mode(seq_id, args, output_root, coco_data, annotation_id_counter, 
 
 def total_random_run_mode(seq_id, args, output_root, coco_data, annotation_id_counter, image_id_counter):
     #Fully random setup for each sequence
-    for i in range(4):
+    for i in range(10):
         print(f"Random run mode - sequence {seq_id}")
         seed = get_seed()
         layout_data = generate_scene_layout(seed, args)
