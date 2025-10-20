@@ -27,11 +27,8 @@ def main(args):
             image_id_to_annotations[img_id] = []
         image_id_to_annotations[img_id].append(ann)
 
-    # --- LA CORREZIONE È QUI ---
-    # Usiamo la variabile corretta 'cat_id' che viene dal ciclo.
     category_colors = {cat_id: [random.randint(100, 255), random.randint(100, 255), random.randint(50, 200)] for cat_id in category_info}
-    # -------------------------
-
+    
     # --- 2. Preparazione dei file della sequenza ---
     sequence_images = [img for img in coco_data['images'] if img['file_name'].startswith(f"{args.sequence_name}/")]
     
@@ -67,6 +64,13 @@ def main(args):
             y = int(bbox[1] * img_height)
             w = int(bbox[2] * img_width)
             h = int(bbox[3] * img_height)
+
+            # --- FIX: IGNORA BBOX CON AREA ZERO ---
+            # Se il BBox ha larghezza o altezza pari a 0,
+            # salta questa annotazione per non disegnare l'etichetta.
+            if w <= 0 or h <= 0:
+                continue
+            # ------------------------------------
             
             color = category_colors[cat_id]
             cv2.rectangle(image, (x, y), (x + w, y + h), color, 2)
@@ -86,9 +90,9 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Disegna i bounding box delle annotazioni COCO su una sequenza di immagini.")
-    parser.add_argument("--annotations_file", type=str, required=True, help="Percorso del file annotations.json.")
-    parser.add_argument("--image_dir", type=str, required=True, help="Cartella radice delle immagini (es. 'output/rgb').")
-    parser.add_argument("--sequence_name", type=str, required=True, help="Nome della sequenza da processare (es. 'seq0').")
+    parser.add_argument("--annotations_file", type=str, default="output/annotations.json", help="Percorso del file annotations.json.")
+    parser.add_argument("--image_dir", type=str, default="output/rgb", help="Cartella radice delle immagini (es. 'output/rgb').")
+    parser.add_argument("--sequence_name", type=str, default="seq4", help="Nome della sequenza da processare (es. 'seq0').")
     parser.add_argument("--output_dir", type=str, default="output/annotated_output", help="Cartella dove salvare le immagini annotate.")
     
     args = parser.parse_args()

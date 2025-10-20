@@ -402,6 +402,59 @@ def get_seed():
 # --- SCENE GENERATION ---
 # ============================================================
 
+def compute_bboxes_manually(segmentation_map, asset):
+    """
+    Calcola manualmente i bounding box per un asset
+    dalla mappa di segmentazione.
+    
+    Args:
+        segmentation_map (np.ndarray): L'array di segmentazione (num_frames, H, W, 1).
+        asset (kb.Asset): L'asset per cui calcolare i BBox.
+
+    Returns:
+        np.ndarray: Un array (num_frames, 4) di BBox normalizzati [ymin, xmin, ymax, xmax].
+    """
+    seg_id = asset.segmentation_id
+    
+    # --- FIX: Gestione della 4a Dimensione (Canale) ---
+    # La mappa di Kubric ha forma (num_frames, H, W, 1)
+    # Dobbiamo rimuovere l'ultima dimensione (canale)
+    if segmentation_map.ndim == 4:
+        # Se l'ultima dimensione è 1, la rimuoviamo
+        if segmentation_map.shape[3] == 1:
+            segmentation_map = segmentation_map.squeeze(axis=3)
+        else:
+            # Questo non dovrebbe accadere
+            raise ValueError(f"La mappa di segmentazione ha una forma inaspettata: {segmentation_map.shape}")
+            
+    # Ora la forma è (num_frames, H, W), come previsto
+    num_frames, height, width = segmentation_map.shape
+    # --- FINE FIX ---
+    
+    all_bboxes = np.zeros((num_frames, 4), dtype=np.float32)
+
+    for frame_idx in range(num_frames):
+        # 1. Trova le coordinate (ora segmentation_map[frame_idx] è 2D)
+        rows, cols = np.where(segmentation_map[frame_idx] == seg_id)
+        
+        # 2. Se l'oggetto non è nel frame, il BBox resta [0.0, 0.0, 0.0, 0.0]
+        if rows.size > 0:
+            # 3. Trova i bordi (min/max)
+            ymin = np.min(rows)
+            xmin = np.min(cols)
+            ymax = np.max(rows) + 1 
+            xmax = np.max(cols) + 1
+            
+            # 4. Normalizza le coordinate
+            all_bboxes[frame_idx] = [
+                float(ymin) / height,
+                float(xmin) / width,
+                float(ymax) / height,
+                float(xmax) / width
+            ]
+
+    return all_bboxes
+
 def generate_scene_layout(seed: int, FLAGS):
     """
     Usa un seed per generare una lista di oggetti con le loro proprietà 
@@ -419,6 +472,11 @@ def generate_scene_layout(seed: int, FLAGS):
     temp_scene += dome
     
     layout_data = []
+
+    # --- SOLUZIONE BUG A: Contatore ID Contiguo ---
+    current_segmentation_id = 1
+    # ---------------------------------------------
+
     # === 1. Posizionamento Iniziale Oggetti Statici ===
     num_static = rng.randint(MIN_STATIC, MAX_STATIC + 1)
     print(f"  📦 Generating {num_static} static objects...")
@@ -463,12 +521,13 @@ def generate_scene_layout(seed: int, FLAGS):
                 # --- SUCCESSO ---
                 layout_data.append({
                     "asset_id": obj.asset_id, 
-                    "segmentation_id": idx + 1,
+                    "segmentation_id": current_segmentation_id,
                     "position": tuple(obj.position), 
                     "quaternion": tuple(obj.quaternion),
                     "scale": tuple(obj.scale), 
                     "static": True
                 })
+                current_segmentation_id += 1
                 oggetto_posizionato_con_successo = True
                 break 
 
@@ -518,7 +577,7 @@ def generate_scene_layout(seed: int, FLAGS):
                 velocity = (rng.uniform(*VELOCITY_RANGE) - [obj.position[0], obj.position[1], 0])
                 layout_data.append({
                     "asset_id": obj.asset_id,
-                    "segmentation_id": num_static + idx + 1,
+                    "segmentation_id": current_segmentation_id,
                     "position": tuple(obj.position),
                     "quaternion": tuple(obj.quaternion),
                     "scale": tuple(obj.scale),
@@ -526,6 +585,7 @@ def generate_scene_layout(seed: int, FLAGS):
                     "angular_velocity": (0., 0., 0.),
                     "static": False
                 })
+                current_segmentation_id += 1
                 oggetto_posizionato_con_successo = True
                 break
 
@@ -537,6 +597,7 @@ def generate_scene_layout(seed: int, FLAGS):
             print(f"    AVVISO FINALE: Impossibile posizionare un oggetto dinamico nello slot #{idx+1} dopo {max_retries} tentativi.")
             
     print(f"  -> Lista di spawn per {len(layout_data)} oggetti creata con successo.")
+    del temp_scene, simulator
     gc.collect()
     return layout_data
 
@@ -667,7 +728,7 @@ def render_variation(seq_id: int, layout_data: list, light_intensity: float, ori
             scene.camera.look_at((1 - interp) * lookat_start + interp * lookat_end)
             scene.camera.keyframe_insert("position", frame)
             scene.camera.keyframe_insert("quaternion", frame)
-# --- FASE 1: Popolamento e Assestamento degli Oggetti Statici ---
+    # --- FASE 1: Popolamento e Assestamento degli Oggetti Statici ---
     print("INFO: Fase 1 - Popolamento e assestamento oggetti statici...")
     
     dynamic_objects_data = []
@@ -717,10 +778,43 @@ def render_variation(seq_id: int, layout_data: list, light_intensity: float, ori
     print("🎥 Rendering...")
     frames_dict = renderer.render()
 
-    # 5. POST-PROCESSING E SALVATAGGIO
+    # 5. POST-PROCESSING E SALVATAGGIO (Versione con Calcolo Manuale)
     kb.compute_visibility(frames_dict["segmentation"], scene.assets)
-    visible_foreground_assets = [asset for asset in scene.foreground_assets if np.max(asset.metadata["visibility"]) > 0]
-    kb.post_processing.compute_bboxes(frames_dict["segmentation"], visible_foreground_assets)
+    
+    # 1. Filtra gli asset visibili (Corretto)
+    visible_foreground_assets = [asset for asset in scene.foreground_assets 
+                                 if np.max(asset.metadata["visibility"]) > 0]
+
+    # 2. Aggiusta la mappa di segmentazione (FONDAMENTALE)
+    #    Questo garantisce che gli ID sulla mappa (es. [1, 3, 4])
+    #    corrispondano agli ID sugli asset (es. [1, 2, 3]).
+    print("INFO: Riassegnamento ID di segmentazione contigui...")
+    frames_dict["segmentation"] = kb.adjust_segmentation_idxs(
+        frames_dict["segmentation"],
+        scene.assets,
+        visible_foreground_assets
+    ).astype(np.uint8)
+
+    # 3. CALCOLO MANUALE (Sostituisce compute_bboxes)
+    #    Iteriamo sugli asset visibili e calcoliamo i loro BBox
+    #    dalla mappa di segmentazione pulita.
+    print("INFO: Calcolo manuale dei Bounding Box...")
+    
+    segmentation_map = frames_dict["segmentation"]
+    
+    for asset in visible_foreground_assets:
+        # Chiama la nostra nuova funzione
+        bboxes_array = compute_bboxes_manually(segmentation_map, asset)
+        
+        # Salva i BBox densi e corretti nei metadati
+        asset.metadata["bboxes"] = bboxes_array
+
+    # 4. Rimuovi i BBox "sparsi" che potrebbero essere stati
+    #    lasciati da una chiamata precedente (per pulizia)
+    for asset in visible_foreground_assets:
+        if "bbox_frames" in asset.metadata:
+            del asset.metadata["bbox_frames"]
+        
 
     # Salvataggio frame
     print(f"💾 Salvataggio frame per seq{seq_id}...")
@@ -743,14 +837,17 @@ def render_variation(seq_id: int, layout_data: list, light_intensity: float, ori
             with open(base_dir / "fps.txt", "w") as f: f.write(str(scene.frame_rate))
                 
     # Metadata
-    exclude_names = {"floor", "camera", "sun", "dome"}
-    scene_objects = [obj for obj in scene.assets if obj.name not in exclude_names]
-    data = {"scene_metadata": kb.get_scene_metadata(scene), "camera": kb.get_camera_info(scene.camera), "object": kb.get_instance_info(scene, scene_objects)}
+    data = {
+            "scene_metadata": kb.get_scene_metadata(scene), 
+            "camera": kb.get_camera_info(scene.camera), 
+            "object": kb.get_instance_info(scene, visible_foreground_assets) # <-- USA QUESTA LISTA
+        }    
     annotations_dir = output_root / "annotations"
     annotations_dir.mkdir(parents=True, exist_ok=True)
     metadata_path = annotations_dir / f"seq{seq_id}_metadata.json"
     kb.file_io.write_json(filename=metadata_path, data=data)
     
+    del scene, renderer, simulator
     gc.collect()
     return data
 
@@ -827,6 +924,7 @@ def standard_run_mode(seq_id, num_sequences, light_levels, light_orientations, c
     
     return coco_data, annotation_id_counter, image_id_counter, seq_id
 
+#TODO: pialla tutto
 def scene_run_mode(seq_id, args, output_root, coco_data, annotation_id_counter, image_id_counter):
     #This run mode use a random mode with for combo between object and camera:
     #1. fixed camera with static objects
@@ -898,7 +996,7 @@ def scene_run_mode(seq_id, args, output_root, coco_data, annotation_id_counter, 
 
 def total_random_run_mode(seq_id, args, output_root, coco_data, annotation_id_counter, image_id_counter):
     #Fully random setup for each sequence
-    for i in range(10):
+    for i in range(5):
         print(f"Random run mode - sequence {seq_id}")
         seed = get_seed()
         layout_data = generate_scene_layout(seed, args)
