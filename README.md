@@ -92,17 +92,11 @@ This file is the main control panel for your dataset. Here is what each paramete
 * `"max_camera_movement": 2.0`
     * (Used for non-fixed camera modes) Sets the maximum speed or range of camera motion.
 
-### Physics & Object Spawning 📦
+### Object Spawning 📦
 * `"min_static_objects": 1` / `"max_static_objects": 3`
     * Defines the random range for the number of **static** (unmoving) objects to place in the scene.
 * `"min_dynamic_objects": 1` / `"max_dynamic_objects": 3`
     * Defines the random range for the number of **dynamic** (moving) objects to place in the scene.
-* `"spawning_region_static": [[-5, -5, 0], [5, 5, 0]]`
-    * Defines the bounding box `[min_corner, max_corner]` where **static** objects will be spawned (a flat area at Z=0).
-* `"spawning_region_dynamic": [[-5, -5, 1], [5, 5, 6]]`
-    * Defines the bounding box `[min_corner, max_corner]` where **dynamic** objects will be spawned (an area floating above the ground).
-* `"velocity_range": [[-4.0, -4.0, 0.0], [4.0, 4.0, 0.0]]`
-    * Defines the min and max velocity vectors to apply to dynamic objects, causing them to move across the scene.
 
 ---
 
