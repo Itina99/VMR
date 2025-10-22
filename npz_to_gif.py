@@ -55,9 +55,10 @@ def render_accumulated(x, y, p, t, shape, current_time, decay_factor=0.7):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Generate GIF animations from event streams")
     parser.add_argument("--input_dir", default="output/events")
+    parser.add_argument("--output_dir", default="gif")
     parser.add_argument("--shape", nargs=2, type=int, default=[256, 256])
-    parser.add_argument("--frames", type=int, default=24, help="Numero di frame per GIF")
-    parser.add_argument("--fps", type=int, default=10, help="Frame per second nella GIF")
+    parser.add_argument("--frames", type=int, default=120, help="Numero di frame per GIF")
+    parser.add_argument("--fps", type=int, default=60, help="Frame per second nella GIF")
     parser.add_argument("--window_size", type=float, default=0.1, help="Finestra temporale per accumulo eventi")
     parser.add_argument("--use_accumulation", action="store_true", help="Usa rendering con accumulo")
     args = parser.parse_args()
@@ -97,8 +98,8 @@ if __name__ == "__main__":
 
         if images:
             filename = os.path.splitext(os.path.basename(f))[0]
-            os.makedirs("gif", exist_ok=True)
-            output_path = os.path.join("gif", f"{filename}.gif")
+            os.makedirs(args.output_dir, exist_ok=True)
+            output_path = os.path.join(args.output_dir, f"{filename}.gif")
             images[0].save(
                 output_path,
                 save_all=True,

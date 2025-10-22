@@ -90,10 +90,10 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Disegna i bounding box delle annotazioni COCO su una sequenza di immagini.")
-    parser.add_argument("--annotations_file", type=str, default="output/annotations.json", help="Percorso del file annotations.json.")
-    parser.add_argument("--image_dir", type=str, default="output/rgb", help="Cartella radice delle immagini (es. 'output/rgb').")
-    parser.add_argument("--sequence_name", type=str, default="seq4", help="Nome della sequenza da processare (es. 'seq0').")
-    parser.add_argument("--output_dir", type=str, default="output/annotated_output", help="Cartella dove salvare le immagini annotate.")
+    parser.add_argument("--annotations_file", type=str, default="output_batch_1/annotations.json", help="Percorso del file annotations.json.")
+    parser.add_argument("--image_dir", type=str, default="output_batch_2/rgb", help="Cartella radice delle immagini (es. 'output/rgb').")
+    parser.add_argument("--sequence_name", type=str, default="1761163564053_deb400", help="Nome della sequenza da processare (es. 'seq0').")
+    parser.add_argument("--output_dir", type=str, default="output_batch_1/annotated_output", help="Cartella dove salvare le immagini annotate.")
     
     args = parser.parse_args()
     main(args)

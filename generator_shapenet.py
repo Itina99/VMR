@@ -27,6 +27,7 @@ from HDRISelector import HDRISelector
 from datetime import datetime
 import time
 import math
+import hashlib
 
 
 
@@ -50,20 +51,7 @@ writer_map = {
     "object_coordinates": write_coordinates_batch,
 }
 
-# Parametri di base 
-#TODO: TOGLIERLI DA QUI DATO CHE SONO NEL PARSER
-RESOLUTION = (256, 256)
-FRAME_END = 24
-FRAME_RATE = 12
-STEP_RATE = 240
-MIN_STATIC, MAX_STATIC = 1, 3
-MIN_DYNAMIC, MAX_DYNAMIC = 1, 3
-SPAWN_REGION_STATIC = [[-5, -5, 0], [5, 5, 0]]
-SPAWN_REGION_DYNAMIC = [[-5, -5, 1], [5, 5, 6]]
-VELOCITY_RANGE = [(-4., -4., 0.), (4., 4., 0.)]
 CAMERA_TYPES = ["fixed", "linear_movement", "panning"]
-#CAMERA_TYPES= ["fixed"]
-MAX_CAMERA_MOVEMENT = 4.0
 
 # Percorsi ai manifest
 SHAPENET_MANIFEST = "gs://kubric-unlisted/assets/ShapeNetCore.v2.json"
@@ -89,7 +77,6 @@ classes_all = ["airplane", "ashcan", "bag", "basket", "bathtub", "bed", "bench",
 light_levels_all = [0.25, 0.5, 0.75, 1.0]  # 0–100%
 
 light_orientations_all = {
-    #"front": (0., 0., 0.),
     "side_45": (0., 0., np.pi/4),
     "side_90": (0., 0., np.pi/2),
     "back_135": (0., 0., 3*np.pi/4),
@@ -233,22 +220,34 @@ def parse_args():
             step_rate=STEP_RATE,
         ) """
 
-    parser.add_argument("--sequences",type=int, default=5)
+    parser.add_argument("--refresh_item_number",type=int, default=5)
     parser.add_argument("--light_levels", nargs="+", type=float, default=[1.0])
-    # pattern = nome seguito da 3 o 4 float
-    parser.add_argument("--light_orientations", nargs="+", default=["side_45", "0.0", "0.0", "0.7854"])
-    parser.add_argument("--camera_positions", nargs="+", default=["tilt_30", "4", "-7", "3"])
-    parser.add_argument("--light_colors", nargs="+", default=["white", "1.0", "1.0", "1.0", "1.0"])
+    parser.add_argument("--camera_modes", nargs="+", choices=["fixed", "linear_movement", "panning"], default=["fixed"])
+    parser.add_argument("--camera_positions", nargs="+", default=["tilt_30"])
+    parser.add_argument("--light_colors", nargs="+", default=["white"])
     parser.add_argument("--output_root", type=Path, default=Path("output"))
+    parser.add_argument("--standard_mode", type=lambda x: x.lower() == 'true', default=True, help="Genera sequenze standard con un oggetto per scena e parametri fissi")
     parser.add_argument("--rand_gen", type=lambda x: x.lower() == 'true', default=False, help="Genera sequenze aggiuntive con parametri casuali e oggetti multipli")
-
+    parser.add_argument("--number_of_random_sequences", type=int, default=5, help="Numero di sequenze casuali da generare se --rand_gen è attivo")
     #other args by default
     parser.add_argument("--friction", type=float, default=1.0)
     parser.add_argument("--restitution", type=float, default=0.0)
-    parser.add_argument("--camera_mode", type=str, choices=["fixed", "linear_movement", "panning"], default="fixed")
     parser.add_argument("--max_camera_movement", type=float, default=4.0)
+    parser.add_argument("--max_dynamic_objects", type=int, default=3)
+    parser.add_argument("--max_static_objects", type=int, default=3)
+    parser.add_argument("--min_dynamic_objects", type=int, default=1)
+    parser.add_argument("--min_static_objects", type=int, default=1)
+    parser.add_argument("--spawning_region_static", nargs=6, type=float, default=[-5, -5, 0, 5, 5, 0], help="Region to spawn static objects: x_min y_min z_min x_max y_max z_max")
+    parser.add_argument("--spawning_region_dynamic", nargs=6, type=float, default=[-5, -5, 1, 5, 5, 6], help="Region to spawn dynamic objects: x_min y_min z_min x_max y_max z_max")
+    parser.add_argument("--velocity_range", nargs=6, type=float, default=[-4.0, -4.0, 0.0, 4.0, 4.0, 0.0], help="Velocity range: x_min y_min z_min x_max y_max z_max")
+    
+    # Convert flat lists to nested format after parsing
+    args = parser.parse_args()
+    args.spawning_region_static = [args.spawning_region_static[0:3], args.spawning_region_static[3:6]]
+    args.spawning_region_dynamic = [args.spawning_region_dynamic[0:3], args.spawning_region_dynamic[3:6]]
+    args.velocity_range = [args.velocity_range[0:3], args.velocity_range[3:6]]
 
-    return parser.parse_args()
+    return args
 
 # ============================================================
 # --- COCO STYLE ANNOTATIONS ---
@@ -261,7 +260,7 @@ def initialize_coco_dict():
         "licenses": [], "categories": [], "images": [], "annotations": []
     }
 
-def update_coco_from_metadata(coco_dict, kubric_metadata, seq_id, annotation_id, image_id):
+def update_coco_from_metadata(coco_dict, kubric_metadata, seq_name, annotation_id, image_id):
     """
     Usa la struttura dati REALE (una lista di oggetti con chiave "bbox")
     per aggiornare il dizionario COCO.
@@ -299,7 +298,7 @@ def update_coco_from_metadata(coco_dict, kubric_metadata, seq_id, annotation_id,
         current_image_id = image_id + frame_idx
         image_info = {
             "id": current_image_id,
-            "file_name": f"seq{seq_id}/imgs/{frame_idx:05d}.png", 
+            "file_name": f"{seq_name}/imgs/{frame_idx:05d}.png", 
             "width": width,
             "height": height
         }
@@ -384,20 +383,27 @@ def update_coco_from_metadata(coco_dict, kubric_metadata, seq_id, annotation_id,
     return coco_dict, annotation_id, next_image_id
 
 # ============================================================
-# --- CHOOSE IDS ---
+# --- UTILS ---
 # ============================================================
 
 def chooseClass(class_name):
     return [name for name, spec in ASSET_SOURCE._assets.items() if spec["metadata"]["category"] == class_name]
 
-# ============================================================
-# --- SET RANDOM SEED ---
-# ============================================================
-
 def get_seed():
     """Return a random seed for generation."""
     return int(time.time() * 1000) % 2**32
 
+def get_sequence_name():
+    """Generate a unique sequence name using timestamp and random hash."""
+    
+    # Generate timestamp component (milliseconds since epoch)
+    timestamp = int(time.time() * 1000)
+    
+    # Generate a random hash component
+    random_bytes = os.urandom(4)  # Reduced since we have timestamp
+    hash_component = hashlib.md5(random_bytes).hexdigest()[:6]
+    
+    return f"{timestamp}_{hash_component}"
 # ============================================================
 # --- SCENE GENERATION ---
 # ============================================================
@@ -455,16 +461,15 @@ def compute_bboxes_manually(segmentation_map, asset):
 
     return all_bboxes
 
-def generate_scene_layout(seed: int, FLAGS):
+def generate_scene_layout(FLAGS):
     """
     Usa un seed per generare una lista di oggetti con le loro proprietà 
     di "spawn" (posizione iniziale, scala, ecc.). 
     NON esegue la simulazione di assestamento.
     """
-    print(f"🔩 Generazione della lista di spawn con seed {seed}...")
-    rng = np.random.RandomState(seed)
+    print(f"🔩 Generazione della lista di spawn con seed {FLAGS.seed}...")
+    rng = np.random.RandomState(FLAGS.seed)
 
-    FLAGS.seed = seed
     temp_scene, _, _, _ = kb.setup(FLAGS)
     simulator = KubricSimulator(temp_scene)
     
@@ -472,53 +477,42 @@ def generate_scene_layout(seed: int, FLAGS):
     temp_scene += dome
     
     layout_data = []
-
-    # --- SOLUZIONE BUG A: Contatore ID Contiguo ---
     current_segmentation_id = 1
-    # ---------------------------------------------
 
     # === 1. Posizionamento Iniziale Oggetti Statici ===
-    num_static = rng.randint(MIN_STATIC, MAX_STATIC + 1)
+    num_static = rng.randint(FLAGS.min_static_objects, FLAGS.max_static_objects + 1)
     print(f"  📦 Generating {num_static} static objects...")
     
     for idx in range(num_static):
         oggetto_posizionato_con_successo = False
-        max_retries = 5  # Prova fino a 5 volte a riempire questo "slot"
+        max_retries = 5  
 
         for attempt in range(max_retries):
-            # Ad ogni tentativo, scegliamo un oggetto NUOVO
             random_class = rng.choice(classes_all)
             shape_ids = chooseClass(random_class)
             shape_id = rng.choice(shape_ids)
             
-            # --- NUOVO BLOCCO TRY...EXCEPT PER LA CREAZIONE DELL'OGGETTO --- ✅
             try:
-                # Tentiamo di creare l'oggetto. È qui che può verificarsi l'errore di massa.
                 obj = ASSET_SOURCE.create(shape_id)
 
             except kb.core.traitlets.TraitError as e:
-                # Se la creazione fallisce a causa di una mesh problematica (massa negativa),
-                # lo intercettiamo, stampiamo un avviso e passiamo al prossimo tentativo.
-                print(f"    AVVISO MASSA: Tentativo {attempt + 1}/{max_retries} fallito. L'oggetto {shape_id} ha una mesh problematica. Riprovo con un altro oggetto.")
-                continue  # 🔄 Salta al prossimo 'attempt' per scegliere un nuovo oggetto
-            # --- FINE BLOCCO NUOVO ---
 
+                print(f"    AVVISO MASSA: Tentativo {attempt + 1}/{max_retries} fallito. L'oggetto {shape_id} ha una mesh problematica. Riprovo con un altro oggetto.")
+                continue  
             scale = rng.uniform(0.75, 3.0)
             obj.scale = scale / np.max(obj.bounds[1] - obj.bounds[0])
             
             temp_scene += obj
             
             try:
-                # Ora che l'oggetto è stato creato con successo, tentiamo di posizionarlo
                 kb.move_until_no_overlap(
                     obj, 
                     simulator, 
-                    spawn_region=SPAWN_REGION_STATIC, 
+                    spawn_region=FLAGS.spawning_region_static, 
                     max_trials=200,
                     rng=rng
                 )
                 
-                # --- SUCCESSO ---
                 layout_data.append({
                     "asset_id": obj.asset_id, 
                     "segmentation_id": current_segmentation_id,
@@ -539,7 +533,7 @@ def generate_scene_layout(seed: int, FLAGS):
             print(f"    AVVISO FINALE: Impossibile posizionare un oggetto statico nello slot #{idx+1} dopo {max_retries} tentativi.")
 
     # === 2. Posizionamento Oggetti Dinamici con Logica di Retry ===
-    num_dynamic = rng.randint(MIN_DYNAMIC, MAX_DYNAMIC + 1)
+    num_dynamic = rng.randint(FLAGS.min_dynamic_objects, FLAGS.max_dynamic_objects + 1)
     print(f"  🚀 Generating up to {num_dynamic} dynamic objects...")
     
     for idx in range(num_dynamic):
@@ -550,31 +544,25 @@ def generate_scene_layout(seed: int, FLAGS):
             random_class = rng.choice(classes_all)
             shape_ids = chooseClass(random_class)
             shape_id = rng.choice(shape_ids)
-
-            # --- NUOVO BLOCCO TRY...EXCEPT PER LA CREAZIONE DELL'OGGETTO --- ✅
             try:
                 obj = ASSET_SOURCE.create(shape_id)
             except kb.core.traitlets.TraitError as e:
                 print(f"    AVVISO MASSA: Tentativo {attempt + 1}/{max_retries} fallito. L'oggetto {shape_id} ha una mesh problematica. Riprovo con un altro oggetto.")
-                continue # 🔄 Salta al prossimo 'attempt' per scegliere un nuovo oggetto
-            # --- FINE BLOCCO NUOVO ---
-            
+                continue 
             scale = rng.uniform(0.75, 3.0)
             obj.scale = scale / np.max(obj.bounds[1] - obj.bounds[0])
             
             temp_scene += obj
-
             try:
                 kb.move_until_no_overlap(
                     obj,
                     simulator,
-                    spawn_region=SPAWN_REGION_DYNAMIC,
+                    spawn_region=FLAGS.spawning_region_dynamic,
                     max_trials=200,
                     rng=rng
                 )
 
-                # --- SUCCESSO ---
-                velocity = (rng.uniform(*VELOCITY_RANGE) - [obj.position[0], obj.position[1], 0])
+                velocity = (rng.uniform(*FLAGS.velocity_range) - [obj.position[0], obj.position[1], 0])
                 layout_data.append({
                     "asset_id": obj.asset_id,
                     "segmentation_id": current_segmentation_id,
@@ -601,7 +589,7 @@ def generate_scene_layout(seed: int, FLAGS):
     gc.collect()
     return layout_data
 
-def render_variation(seq_id: int, layout_data: list, light_intensity: float, orientation: tuple, camera_position: tuple, light_color: tuple, FLAGS, output_root: Path = Path("output")):
+def render_variation(layout_data: list, light_intensity: float, light_color: tuple, light_orientation: tuple, camera_position: tuple, camera_mode:str, FLAGS, output_root: Path = Path("output")):
     """Crea una scena, la popola, imposta i parametri della variazione (camera, luci) e include la logica completa per dome, HDRI, rendering e salvataggio."""
     # 1. SETUP INIZIALE
     # Eseguiamo la pulizia solo qui, per garantire che ogni variazione sia indipendente
@@ -623,14 +611,15 @@ def render_variation(seq_id: int, layout_data: list, light_intensity: float, ori
     logging.info(f"Using light color: {light_color}")
 
     # --- CALIBRAZIONE DELLA LUMINOSITÀ ---
-    LIGHT_SOURCE_GAMMA = 2.2
+    LIGHT_SOURCE_GAMMA = 1.8
     light_source_intensity = light_intensity ** LIGHT_SOURCE_GAMMA
-    BACKGROUND_GAMMA = 1.6
+    BACKGROUND_GAMMA = 1.8
     background_visual_intensity = light_intensity ** BACKGROUND_GAMMA
     AMBIENT_LIGHT_FACTOR = 0.1
     print(f"INFO: Intensità luce: {light_source_intensity:.4f} | Intensità sfondo: {background_visual_intensity:.4f} | Luce ambiente: {AMBIENT_LIGHT_FACTOR}")
 
     # --- Luce ambientale del Mondo di Blender ---
+    light_color = get_light_color_by_intensity(light_intensity) if light_color is None else light_color
     world_background_node = bpy.context.scene.world.node_tree.nodes.get("Background")
     if world_background_node:
         # Usiamo direttamente la variabile light_color, che dovrebbe essere un RGBA
@@ -640,8 +629,8 @@ def render_variation(seq_id: int, layout_data: list, light_intensity: float, ori
 
     # --- Aggiungiamo un Sole ---
     SUN_BASE_INTENSITY = 0.25
-    sun_pos = get_light_direction(light_intensity, rng)
-    light_color = get_light_color_by_intensity(light_intensity)
+    sun_pos = get_light_direction(light_intensity, rng) if light_orientation is None else light_orientation
+
     sun = kb.DirectionalLight(
         name="sun",
         position=sun_pos,
@@ -689,10 +678,8 @@ def render_variation(seq_id: int, layout_data: list, light_intensity: float, ori
                 node_tree.links.new(node_tree.nodes["Vector Math"].outputs["Vector"], dest_socket)
 
     # --- Camera ---
-    camera_mode = FLAGS.camera_mode
     max_camera_speed = FLAGS.max_camera_movement
-    logging.info(f"🎥 Setting up Camera in '{camera_mode}' mode...")
-    print(f"🎥 Setting up Camera in '{FLAGS.camera_mode}' mode...")
+    print(f"🎥 Setting up Camera in '{camera_mode}' mode...")
 
     scene.camera = kb.PerspectiveCamera(name="camera", focal_length=35., sensor_width=32)
 
@@ -773,8 +760,6 @@ def render_variation(seq_id: int, layout_data: list, light_intensity: float, ori
     # --- FASE 3: Simulazione Finale e Rendering ---
     print("🎬 Simulazione finale...")
     animation, collisions = simulator.run(frame_start=0, frame_end=scene.frame_end)
-    print("Saving state...")
-    renderer.save_state(output_root / f"states/seq{seq_id}.blend")
     print("🎥 Rendering...")
     frames_dict = renderer.render()
 
@@ -817,17 +802,18 @@ def render_variation(seq_id: int, layout_data: list, light_intensity: float, ori
         
 
     # Salvataggio frame
-    print(f"💾 Salvataggio frame per seq{seq_id}...")
-    for key in tqdm(frames_dict.keys(), desc=f"Scrittura Frame seq{seq_id}", unit="tipo"):
+    seq_name = get_sequence_name()
+    print(f"💾 Salvataggio frame per {seq_name}...")
+    for key in tqdm(frames_dict.keys(), desc=f"Scrittura Frame {seq_name}", unit="tipo"):
         value = frames_dict[key]
-        base_dir = output_root / key / f"seq{seq_id}"
+        base_dir = output_root / key / seq_name
         imgs_dir = base_dir / "imgs"
         imgs_dir.mkdir(parents=True, exist_ok=True)
 
         if key == "rgba":
             writer_map["rgba"](value, imgs_dir)
             rgb = value[..., :3]
-            rgb_base_dir = output_root / "rgb" / f"seq{seq_id}"
+            rgb_base_dir = output_root / "rgb" / seq_name
             rgb_imgs_dir = rgb_base_dir / "imgs"
             rgb_imgs_dir.mkdir(parents=True, exist_ok=True)
             writer_map["rgb"](rgb, rgb_imgs_dir)
@@ -844,12 +830,12 @@ def render_variation(seq_id: int, layout_data: list, light_intensity: float, ori
         }    
     annotations_dir = output_root / "annotations"
     annotations_dir.mkdir(parents=True, exist_ok=True)
-    metadata_path = annotations_dir / f"seq{seq_id}_metadata.json"
+    metadata_path = annotations_dir / f"{seq_name}_metadata.json"
     kb.file_io.write_json(filename=metadata_path, data=data)
     
     del scene, renderer, simulator
     gc.collect()
-    return data
+    return data, seq_name
 
 def clean_blender_scene():
     """
@@ -889,7 +875,7 @@ def clean_blender_scene():
 # --- RUN MODES ---
 # ============================================================
 
-def standard_run_mode(seq_id, num_sequences, light_levels, light_orientations, camera_positions, light_colors, output_root, args, coco_data, annotation_id_counter, image_id_counter):
+def standard_run_mode(num_sequences, output_root, args, coco_data, annotation_id_counter, image_id_counter):
     
     for seq_batch in range(num_sequences):
         # 1. Imposta il SEED una sola volta per l'intero batch
@@ -898,122 +884,49 @@ def standard_run_mode(seq_id, num_sequences, light_levels, light_orientations, c
         print(f"\n🌟 Inizio sequence batch {seq_batch + 1}/{num_sequences} con SEED {seed}")
         
         # 2. GENERA IL LAYOUT CASUALE UNA SOLA VOLTA USANDO IL SEED
-        layout_data = generate_scene_layout(seed, args)
+        layout_data = generate_scene_layout(args)
 
         # 3. Ora cicla sulle variazioni, che sono PURAMENTE DETERMINISTICHE
-        for intensity in light_levels:
-            for orient_name, orientation in light_orientations.items():
-                for color_name, color_value in light_colors.items():
+        for intensity in args.light_levels:
                 # Camera position is only cycled if camera mode is fixed
-                    for cam_mode in CAMERA_TYPES:
-                        args.camera_mode = cam_mode
-                        if args.camera_mode == "fixed":
-                            for cam_name, cam_pos in camera_positions.items():
-                                print(f"\n🚀 Generazione sequenza {seq_id} | batch {seq_batch + 1} | seed {args.seed} | light={int(intensity*100)}% | orient={orient_name} | cam={cam_name} | color={color_name} | camera_mode={args.camera_mode}")
-                                kubric_metadata = render_variation(seq_id=seq_id, layout_data=layout_data, light_intensity=intensity, orientation=orientation, camera_position=cam_pos, light_color=color_value, FLAGS=args, output_root=output_root)
+                    for cam_mode in args.camera_modes:
+                        if cam_mode == "fixed":
+                            for cam_pos in [camera_positions_all[name] for name in args.camera_positions]:
+                                print(f"\n🚀 Generazione sequenza | batch {seq_batch + 1} | seed {args.seed} | light={int(intensity*100)}% | camera_mode={cam_mode}")
+                                kubric_metadata, seq_name = render_variation(layout_data=layout_data, light_intensity=intensity, light_color=None, light_orientation=None, camera_position=cam_pos, camera_mode=cam_mode, FLAGS=args, output_root=output_root)
                                 # 4. Aggiorna il dizionario COCO con i nuovi dati
-                                coco_data, annotation_id_counter, image_id_counter = update_coco_from_metadata(coco_data, kubric_metadata, seq_id, annotation_id_counter, image_id_counter)
-                                seq_id += 1
+                                coco_data, annotation_id_counter, image_id_counter = update_coco_from_metadata(coco_data, kubric_metadata, seq_name, annotation_id_counter, image_id_counter)
                         else:
                             # For non-fixed camera modes, don't cycle through camera positions
-                            print(f"\n🚀 Generazione sequenza {seq_id} | batch {seq_batch + 1} | seed {args.seed} | light={int(intensity*100)}% | orient={orient_name} | color={color_name} | camera_mode={args.camera_mode}")
-                            kubric_metadata = render_variation(seq_id=seq_id, layout_data=layout_data, light_intensity=intensity, orientation=orientation, camera_position=None, light_color=color_value, FLAGS=args, output_root=output_root)
+                            print(f"\n🚀 Generazione sequenza | batch {seq_batch + 1} | seed {args.seed} | light={int(intensity*100)}% | camera_mode={cam_mode}")
+                            kubric_metadata, seq_name = render_variation(layout_data=layout_data, light_intensity=intensity, light_color=None, light_orientation=None, camera_position=None, camera_mode=cam_mode, FLAGS=args, output_root=output_root)
                             # 4. Aggiorna il dizionario COCO con i nuovi dati
-                            coco_data, annotation_id_counter, image_id_counter = update_coco_from_metadata(coco_data, kubric_metadata, seq_id, annotation_id_counter, image_id_counter)
-                            seq_id += 1
+                            coco_data, annotation_id_counter, image_id_counter = update_coco_from_metadata(coco_data, kubric_metadata, seq_name, annotation_id_counter, image_id_counter)
+  
     
-    return coco_data, annotation_id_counter, image_id_counter, seq_id
+    return coco_data, annotation_id_counter, image_id_counter
 
-#TODO: pialla tutto
-def scene_run_mode(seq_id, args, output_root, coco_data, annotation_id_counter, image_id_counter):
-    #This run mode use a random mode with for combo between object and camera:
-    #1. fixed camera with static objects
-    #2. moving camera with static objects
-    #3. fixed camera with dynamic objects
-    #4. moving camera with dynamic objects
-    
-    #N1
-    seed = get_seed()
-    args.seed = seed
-    # Modify the global variables for this specific scene mode
-    global MIN_STATIC, MAX_STATIC, MIN_DYNAMIC, MAX_DYNAMIC
-
-    # Set specific values for scene mode N1 (fixed camera with static objects)
-    MIN_STATIC, MAX_STATIC = 2, 4  # More static objects
-    MIN_DYNAMIC, MAX_DYNAMIC = 0, 0  # Fewer or no dynamic objects
-    layout_data = generate_scene_layout(seed, args)
-    light_intensity = 1.0
-    orientation = get_light_direction(light_intensity, np.random)
-    args.camera_mode = "fixed"
-    camera_position = Random.choice(list(camera_positions_all.values()))
-    light_color = light_colors_all["white"]
-    print(f"\n🚀 Generazione sequenza {seq_id} | seed {args.seed} | light={int(light_intensity*100)}% | orient={orientation} | color={light_color} | camera_mode={args.camera_mode}")
-    kubric_metadata = render_variation(seq_id=seq_id, layout_data=layout_data, light_intensity=light_intensity, orientation=orientation, camera_position=camera_position, light_color=light_color, FLAGS=args, output_root=output_root)
-    # 4. Aggiorna il dizionario COCO con i nuovi dati
-    coco_data, annotation_id_counter, image_id_counter = update_coco_from_metadata(coco_data, kubric_metadata, seq_id, annotation_id_counter, image_id_counter)
-    seq_id += 1
-
-    #N2
-    seed = get_seed()
-    args.seed = seed
-
-    # Set specific values for scene mode N2 (moving camera with static objects)
-    layout_data = generate_scene_layout(seed, args)
-    args.camera_mode = Random.choice(["linear_movement", "panning"])
-    print(f"\n🚀 Generazione sequenza {seq_id} | seed {args.seed} | light={int(light_intensity*100)}% | orient={orientation} | color={light_color} | camera_mode={args.camera_mode}")
-    kubric_metadata = render_variation(seq_id=seq_id, layout_data=layout_data, light_intensity=light_intensity, orientation=orientation, camera_position=camera_position, light_color=light_color, FLAGS=args, output_root=output_root)
-    # 4. Aggiorna il dizionario COCO con i nuovi dati
-    coco_data, annotation_id_counter, image_id_counter = update_coco_from_metadata(coco_data, kubric_metadata, seq_id, annotation_id_counter, image_id_counter)
-    seq_id += 1
-
-    #N3
-    seed = get_seed()
-    args.seed = seed
-    # Set specific values for scene mode N3 (fixed camera with dynamic objects)
-    MIN_STATIC, MAX_STATIC = 0, 0  # Fewer or no static
-    MIN_DYNAMIC, MAX_DYNAMIC = 2, 4  # More dynamic objects
-    layout_data = generate_scene_layout(seed, args)
-    args.camera_mode = "fixed"
-    camera_position = Random.choice(list(camera_positions_all.values()))
-    print(f"\n🚀 Generazione sequenza {seq_id} | seed {args.seed} | light={int(light_intensity*100)}% | orient={orientation} | color={light_color} | camera_mode={args.camera_mode}")
-    kubric_metadata = render_variation(seq_id=seq_id, layout_data=layout_data, light_intensity=light_intensity, orientation=orientation, camera_position=camera_position, light_color=light_color, FLAGS=args, output_root=output_root)
-    # 4. Aggiorna il dizionario COCO con i nuovi dati
-    coco_data, annotation_id_counter, image_id_counter = update_coco_from_metadata(coco_data, kubric_metadata, seq_id, annotation_id_counter, image_id_counter)
-    seq_id += 1
-
-    #N4
-    seed = get_seed()
-    args.seed = seed
-    # Set specific values for scene mode N4 (moving camera with dynamic objects)
-    layout_data = generate_scene_layout(seed, args)
-    args.camera_mode = Random.choice(["linear_movement", "panning"])
-    print(f"\n🚀 Generazione sequenza {seq_id} | seed {args.seed} | light={int(light_intensity*100)}% | orient={orientation} | color={light_color} | camera_mode={args.camera_mode}")
-    kubric_metadata = render_variation(seq_id=seq_id, layout_data=layout_data, light_intensity=light_intensity, orientation=orientation, camera_position=camera_position, light_color=light_color, FLAGS=args, output_root=output_root)
-    # 4. Aggiorna il dizionario COCO con i nuovi dati
-    coco_data, annotation_id_counter, image_id_counter = update_coco_from_metadata(coco_data, kubric_metadata, seq_id, annotation_id_counter, image_id_counter)
-    seq_id += 1
-    return coco_data, annotation_id_counter, image_id_counter, seq_id
-
-def total_random_run_mode(seq_id, args, output_root, coco_data, annotation_id_counter, image_id_counter):
+def total_random_run_mode(args, output_root, coco_data, annotation_id_counter, image_id_counter):
     #Fully random setup for each sequence
-    for i in range(5):
-        print(f"Random run mode - sequence {seq_id}")
+    print(f"Random run mode")
+    for i in range(args.number_of_random_sequences):
+
         seed = get_seed()
-        layout_data = generate_scene_layout(seed, args)
+        args.seed = seed
+        layout_data = generate_scene_layout(args)
+        light_orientation = Random.choice(list(light_orientations_all.values()))
         light_intensity = Random.choice(light_levels_all)
-        orientation = Random.choice(list(light_orientations_all.values()))
-        args.camera_mode = Random.choice(CAMERA_TYPES)
-        if args.camera_mode == "fixed": 
+        camera_mode = Random.choice(CAMERA_TYPES)
+        if camera_mode == "fixed": 
             camera_position = Random.choice(list(camera_positions_all.values()))
         else:
             camera_position = None
         light_color = Random.choice(list(light_colors_all.values()))
-        print(f"\n🚀 Generazione sequenza {seq_id} | seed {args.seed} | light={int(light_intensity*100)}% | orient={orientation} | color={light_color} | camera_mode={args.camera_mode}")
-        kubric_metadata = render_variation(seq_id=seq_id, layout_data=layout_data, light_intensity=light_intensity, orientation=orientation, camera_position=camera_position, light_color=light_color, FLAGS=args, output_root=output_root)
+        print(f"\n🚀 Generazione sequenza | seed {args.seed} | light={int(light_intensity*100)}%| color={light_color} | camera_mode={camera_mode}")
+        kubric_metadata, seq_name = render_variation(layout_data=layout_data, light_intensity=light_intensity, light_color=light_color, light_orientation=light_orientation, camera_position=camera_position, camera_mode=camera_mode, FLAGS=args, output_root=output_root)
         # 4. Aggiorna il dizionario COCO con i nuovi dati
-        coco_data, annotation_id_counter, image_id_counter = update_coco_from_metadata(coco_data, kubric_metadata, seq_id, annotation_id_counter, image_id_counter)
-        seq_id += 1
-    return coco_data, annotation_id_counter, image_id_counter, seq_id
+        coco_data, annotation_id_counter, image_id_counter = update_coco_from_metadata(coco_data, kubric_metadata, seq_name, annotation_id_counter, image_id_counter)
+    return coco_data, annotation_id_counter, image_id_counter
 
 # ============================================================
 # --- MAIN ---
@@ -1022,96 +935,34 @@ def total_random_run_mode(seq_id, args, output_root, coco_data, annotation_id_co
 def main():
     args = parse_args()
     print("🎛️  Configurazione in corso...")
-    print("number of sequences:", args.sequences)
+    print("number of sequences:", args.refresh_item_number)
     print("Light levels:", args.light_levels)
-    print("Orientations:", args.light_orientations)
     print("Cameras:", args.camera_positions)
-    print("Colors:", args.light_colors)
+    print("Output root:", args.output_root)
+    print("Camera modes:", args.camera_modes)
+    print("Standard mode:", args.standard_mode)
+    print("Random generation mode:", args.rand_gen)
+    print("Resolution:", args.resolution)
+    print("Spawn regions:", args.spawning_region_static, args.spawning_region_dynamic)
+    print("Velocity range:", args.velocity_range)
 
-    def _normalize_list_arg(lst):
-        """Accetta ['a','b',...] oppure ['a,b;c d'] e restituisce ['a','b','c','d'].
-        Se la lista contiene numeri (int/float), li restituisce così com'è.
-        """
-        if not lst:
-            return []
 
-        # Caso: lista di numeri → ritorna direttamente
-        if all(isinstance(x, (int, float)) for x in lst):
-            return lst
-
-        # Caso: singola stringa da splittare
-        if len(lst) == 1 and isinstance(lst[0], str):
-            s = lst[0]
-            return [t for t in re.split(r'[,\s;]+', s) if t]
-
-        # Caso: lista di stringhe già separata
-        return [str(x) for x in lst]
-
-    # -- number of sequences
-    num_sequences = args.sequences
-
-    # -- light_levels
-    raw_levels = _normalize_list_arg(args.light_levels)
-    try:
-        light_levels = [float(x) for x in raw_levels]
-    except ValueError as e:
-        raise ValueError(f"light_levels non validi: {raw_levels}") from e
-
-    # -- light_orientations (gruppi da 4: name x y z)
-    raw_orients = _normalize_list_arg(args.light_orientations)
-    if len(raw_orients) % 4 != 0:
-        raise ValueError(f"light_orientations: numero token non multiplo di 4: {raw_orients}")
-    light_orientations = {}
-    for i in range(0, len(raw_orients), 4):
-        name = raw_orients[i]
-        try:
-            x, y, z = map(float, raw_orients[i+1:i+4])
-        except ValueError as e:
-            raise ValueError(f"Orientazione non valida per '{name}': {raw_orients[i+1:i+4]}") from e
-        light_orientations[name] = (x, y, z)
-
-    # -- camera_positions (gruppi da 4: name x y z)
-    raw_cams = _normalize_list_arg(args.camera_positions)
-    if len(raw_cams) % 4 != 0:
-        raise ValueError(f"camera_positions: numero token non multiplo di 4: {raw_cams}")
-    camera_positions = {}
-    for i in range(0, len(raw_cams), 4):
-        name = raw_cams[i]
-        try:
-            x, y, z = map(float, raw_cams[i+1:i+4])
-        except ValueError as e:
-            raise ValueError(f"Posizione camera non valida per '{name}': {raw_cams[i+1:i+4]}") from e
-        camera_positions[name] = (x, y, z)
-
-    # -- light_colors (gruppi da 5: name r g b a)
-    raw_colors = _normalize_list_arg(args.light_colors)
-    if len(raw_colors) % 5 != 0:
-        raise ValueError(f"light_colors: numero token non multiplo di 5: {raw_colors}")
-    light_colors = {}
-    for i in range(0, len(raw_colors), 5):
-        name = raw_colors[i]
-        try:
-            r, g, b, a = map(float, raw_colors[i+1:i+5])
-        except ValueError as e:
-            raise ValueError(f"Colore luce non valido per '{name}': {raw_colors[i+1:i+5]}") from e
-        light_colors[name] = (r, g, b, a)
+    num_refresh = args.refresh_item_number
 
     # Use output_root from arguments
     output_root = args.output_root
-
-    seq_id = 0
     coco_data = initialize_coco_dict()
     annotation_id_counter = 1
     image_id_counter = 1
     print("INFO: Inizializzazione dell'ambiente Kubric (Bootstrap)...")
     kb.setup(args) 
     clean_blender_scene()
-    # print("Standard mode run.....")
-    # coco_data, annotation_id_counter, image_id_counter, seq_id = standard_run_mode(seq_id, num_sequences, light_levels, light_orientations, camera_positions, light_colors, output_root, args, coco_data, annotation_id_counter, image_id_counter)
-    # print("Scene mode run.....")
-    # coco_data, annotation_id_counter, image_id_counter, seq_id = scene_run_mode(seq_id, args, output_root, coco_data, annotation_id_counter, image_id_counter)
-    print("Total random mode run.....")
-    coco_data, annotation_id_counter, image_id_counter, seq_id = total_random_run_mode(seq_id, args, output_root, coco_data, annotation_id_counter, image_id_counter)
+    if args.standard_mode:
+        print("Standard mode selected.....")
+        coco_data, annotation_id_counter, image_id_counter = standard_run_mode(num_refresh, output_root, args, coco_data, annotation_id_counter, image_id_counter)
+    if args.rand_gen:
+        print("Total random mode run.....")
+        coco_data, annotation_id_counter, image_id_counter= total_random_run_mode(args, output_root, coco_data, annotation_id_counter, image_id_counter)
     annotations_path = output_root / "annotations.json"
     kb.file_io.write_json(filename=annotations_path, data=coco_data)
     print(f"\n✅ Annotazioni COCO salvate in: '{annotations_path}'")
