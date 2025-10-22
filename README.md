@@ -31,12 +31,27 @@ Running the full generation process is simple. The entire pipeline is managed by
     chmod +x pipeline.sh
     ```
 3.  **Start the generation!**
+    
+    The `run_batches.sh` script accepts two optional arguments:
+    * `ARG1`: The path to your config file (default: `config.json`)
+    * `ARG2`: The total number of batches to run (default: `5`)
+
+    **To run with default settings** (5 batches, using `config.json`):
     ```bash
     ./run_batches.sh
     ```
 
-That's it! The `run_batches.sh` script will:
-* Read the `TOTAL_BATCHES` variable inside it (e.g., 5).
+    **To run with a custom config file** (5 batches):
+    ```bash
+    ./run_batches.sh my_custom_config.json
+    ```
+
+    **To run with both custom config and custom batch count** (e.g., 20 batches):
+    ```bash
+    ./run_batches.sh my_custom_config.json 20
+    ```
+
+The script will:
 * Create a unique output folder for each batch (e.g., `output_batch_1/`, `output_batch_2/`, etc.).
 * Call `pipeline.sh` for each batch, which runs the main Docker simulation.
 * Each `output_batch_.../` folder will be a complete, self-contained mini-dataset.
