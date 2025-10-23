@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# ========== CONFIGURAZIONE ==========
+# ========== CONFIGURATION ==========
 SIMULATION_TYPE="shapenet"
 
 CONFIG_FILE="${1:-config.json}"
@@ -31,12 +31,9 @@ if [ -f "$CONFIG_FILE" ]; then
     MAX_STATIC_OBJECTS=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); print(c.get('max_static_objects', 3))")
     MIN_DYNAMIC_OBJECTS=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); print(c.get('min_dynamic_objects', 1))")
     MIN_STATIC_OBJECTS=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); print(c.get('min_static_objects', 1))")
-    SPAWNING_REGION_STATIC=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); v=c.get('spawning_region_static', [[-5, -5, 0], [5, 5, 0]]); print(' '.join([str(x) for sublist in v for x in sublist]))")
-    SPAWNING_REGION_DYNAMIC=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); v=c.get('spawning_region_dynamic', [[-5, -5, 1], [5, 5, 6]]); print(' '.join([str(x) for sublist in v for x in sublist]))")
-    VELOCITY_RANGE=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); v=c.get('velocity_range', [[-4.0, -4.0, 0.0], [4.0, 4.0, 0.0]]); print(' '.join([str(x) for sublist in v for x in sublist]))")
-echo "📋 Configurazioni caricate da $CONFIG_FILE"
+echo "📋 Configuration loaded from $CONFIG_FILE"
 else
-    echo "⚠️  File di configurazione $CONFIG_FILE non trovato, uso valori di default"
+    echo "⚠️  Configuration file $CONFIG_FILE not found, using default values"
     REFRESH_ITEM_NUMBER="1"
     LIGHT_LEVELS="1.0"
     CAMERA_POSITIONS="tilt_30"
@@ -53,25 +50,23 @@ else
     MAX_STATIC_OBJECTS="3"
     MIN_DYNAMIC_OBJECTS="1"
     MIN_STATIC_OBJECTS="1"
-    SPAWNING_REGION_STATIC="[[-5 -5 0] [5 5 0]]"
-    SPAWNING_REGION_DYNAMIC="[[-5 -5 1] [5 5 6]]"
-    VELOCITY_RANGE="[[-4.0 -4.0 0.0] [4.0 4.0 0.0]]"
 fi
 
-# Utente e gruppo corrente (per Docker)
+
 USER_ID=$(id -u)
 GROUP_ID=$(id -g)
 CURRENT_DIR=$(pwd)
+BATCH_NUMBER=$(basename "$OUTPUT_DIR" | sed 's/.*_batch_//')
 
-# ========== ATTIVAZIONE AMBIENTE CONDA ==========
-echo "🔧 Attivazione ambiente conda 'vid2e'..."
+# ========== CONDA ENVIRONMENT ==========
+echo "🔧 Activating conda environment 'vid2e'..."
 source $(conda info --base)/etc/profile.d/conda.sh
 conda activate vid2e
-echo "✅ Ambiente conda 'vid2e' attivato"
+echo "✅ Conda environment 'vid2e' activated"
 echo ""
 
-# ========== 1. SIMULAZIONE ==========
-echo "🚀 Avvio simulazione Kubric ($SIMULATION_TYPE) per $OUTPUT_DIR..."
+# ========== 1. SIMULATION ==========
+echo "🚀 Starting Kubric simulation ($SIMULATION_TYPE) for $OUTPUT_DIR..."
 
 if [ "$SIMULATION_TYPE" = "shapenet" ]; then
     docker run --rm -it \
@@ -96,32 +91,27 @@ if [ "$SIMULATION_TYPE" = "shapenet" ]; then
             --max_dynamic_objects $MAX_DYNAMIC_OBJECTS \
             --max_static_objects $MAX_STATIC_OBJECTS \
             --min_dynamic_objects $MIN_DYNAMIC_OBJECTS \
-            --min_static_objects $MIN_STATIC_OBJECTS\
-            --spawning_region_static $SPAWNING_REGION_STATIC \
-            --spawning_region_dynamic $SPAWNING_REGION_DYNAMIC \
-            --velocity_range $VELOCITY_RANGE
+            --min_static_objects $MIN_STATIC_OBJECTS
 fi
 
-# # ========== 2. CLEANUP OUTPUT ==========
-# # Remove existing upsampled directory if it exists to ensure clean output
-# if [ -d "$UPSAMPLED_DIR" ]; then
-#     echo "🧹 Pulizia directory esistente: $UPSAMPLED_DIR"
-#     rm -rf "$UPSAMPLED_DIR"
-# fi
+# ========== 2. CLEANUP OUTPUT ==========
+if [ -d "$UPSAMPLED_DIR" ]; then
+    echo "🧹 Cleaning up existing directory: $UPSAMPLED_DIR"
+    rm -rf "$UPSAMPLED_DIR"
+fi
 
-# # ========== 3. UPSAMPLING AND EVENT GENERATION ==========
-# # Generate upsampled frames from simulation output to increase temporal resolution
-# echo "⚡ Generazione eventi e upsampling..."
-# python3 upsample_frames.py --input_dir "$RGB_DIR" --output_dir "$UPSAMPLED_DIR"
+# ========== 3. UPSAMPLING AND EVENT GENERATION ==========
+echo "⚡ Generating events and upsampling..."
+python3 upsample_frames.py --input_dir "$RGB_DIR" --output_dir "$UPSAMPLED_DIR"
 
-# conda activate vid2e
-# # Generate event data from upsampled RGB frames
-# echo "✅ Pulizia completata. Generazione eventi..."
-# python3 event_generation.py --input_dir "$UPSAMPLED_DIR" --output_dir "$EVENTS_DIR"
+conda activate vid2e
+# Generate event data from upsampled RGB frames
+echo "✅ Cleanup completed. Generating events..."
+python3 event_generation.py --input_dir "$UPSAMPLED_DIR" --output_dir "$EVENTS_DIR"
 
-# # Create GIF animations from NPZ event data for visualization
-# echo "🎬 Generazione gif eventi..."
-# python3 npz_to_gif.py --input_dir "$EVENTS_DIR" --output_dir "$GIF_DIR" --shape $(echo $RESOLUTION | tr 'x' ' ') --frames 120 --fps 60 --window_size 0.1 --use_accumulation
+# Create GIF animations from NPZ event data for visualization
+echo "🎬 Generating event GIFs..."
+python3 npz_to_gif.py --input_dir "$EVENTS_DIR" --output_dir "$GIF_DIR" --shape $(echo $RESOLUTION | tr 'x' ' ') --frames 120 --fps 60 --window_size 0.1 --use_accumulation
 
-# # Pipeline execution completed successfully
-# echo "✅ Pipeline per il Batch $BATCH_NUMBER completata!"
+# Pipeline execution completed successfully
+echo "✅ Pipeline for Batch $BATCH_NUMBER completed!"

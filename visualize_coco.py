@@ -6,16 +6,15 @@ from tqdm import tqdm
 import random
 
 def main(args):
-    # --- 1. Caricamento e indicizzazione dei dati COCO ---
-    print(f"🔎 Caricamento del file di annotazioni: '{args.annotations_file}'")
+    print(f"🔎 Loading annotations file: '{args.annotations_file}'")
     try:
         with open(args.annotations_file, 'r') as f:
             coco_data = json.load(f)
     except FileNotFoundError:
-        print(f"❌ ERRORE: File non trovato. Assicurati che il percorso sia corretto.")
+        print(f"❌ ERROR: File not found. Please ensure the path is correct.")
         return
 
-    print("🔄 Indicizzazione delle annotazioni...")
+    print("🔄 Indexing annotations...")
     
     images_info = {img['id']: img for img in coco_data['images']}
     category_info = {cat['id']: cat for cat in coco_data['categories']}
@@ -29,20 +28,18 @@ def main(args):
 
     category_colors = {cat_id: [random.randint(100, 255), random.randint(100, 255), random.randint(50, 200)] for cat_id in category_info}
     
-    # --- 2. Preparazione dei file della sequenza ---
     sequence_images = [img for img in coco_data['images'] if img['file_name'].startswith(f"{args.sequence_name}/")]
     
     if not sequence_images:
-        print(f"⚠️ Attenzione: Nessuna immagine trovata per la sequenza '{args.sequence_name}' nel file JSON.")
+        print(f"⚠️ Warning: No images found for sequence '{args.sequence_name}' in JSON file.")
         return
 
     sequence_images = sorted(sequence_images, key=lambda i: i['file_name'])
     output_dir_path = os.path.join(args.output_dir, args.sequence_name)
     os.makedirs(output_dir_path, exist_ok=True)
-    print(f"🎨 Le immagini con le annotazioni verranno salvate in: '{output_dir_path}'")
+    print(f"🎨 Annotated images will be saved to: '{output_dir_path}'")
 
-    # --- 3. Disegno dei Bounding Box ---
-    for img_data in tqdm(sequence_images, desc=f"Disegnando BBox per {args.sequence_name}"):
+    for img_data in tqdm(sequence_images, desc=f"Drawing BBoxes for {args.sequence_name}"):
         directory_part, base_filename = os.path.split(img_data['file_name'])
         correct_filename = f"rgb_{base_filename}"
         image_path = os.path.join(args.image_dir, directory_part, correct_filename)
@@ -65,9 +62,6 @@ def main(args):
             w = int(bbox[2] * img_width)
             h = int(bbox[3] * img_height)
 
-            # --- FIX: IGNORA BBOX CON AREA ZERO ---
-            # Se il BBox ha larghezza o altezza pari a 0,
-            # salta questa annotazione per non disegnare l'etichetta.
             if w <= 0 or h <= 0:
                 continue
             # ------------------------------------
@@ -86,14 +80,14 @@ def main(args):
         output_image_path = os.path.join(output_dir_path, correct_filename)
         cv2.imwrite(output_image_path, image)
 
-    print("\n🎉 Processo completato!")
+    print("\n🎉 Processing complete!")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Disegna i bounding box delle annotazioni COCO su una sequenza di immagini.")
-    parser.add_argument("--annotations_file", type=str, default="output_batch_1/annotations.json", help="Percorso del file annotations.json.")
-    parser.add_argument("--image_dir", type=str, default="output_batch_2/rgb", help="Cartella radice delle immagini (es. 'output/rgb').")
-    parser.add_argument("--sequence_name", type=str, default="1761163564053_deb400", help="Nome della sequenza da processare (es. 'seq0').")
-    parser.add_argument("--output_dir", type=str, default="output_batch_1/annotated_output", help="Cartella dove salvare le immagini annotate.")
-    
+    parser = argparse.ArgumentParser(description="Draw bounding boxes of COCO annotations on a sequence of images.")
+    parser.add_argument("--annotations_file", type=str, default="output_batch_1/annotations.json", help="Path to the annotations.json file.")
+    parser.add_argument("--image_dir", type=str, default="output_batch_2/rgb", help="Root folder of the images (e.g. 'output/rgb').")
+    parser.add_argument("--sequence_name", type=str, default="1761163564053_deb400", help="Name of the sequence to process (e.g. 'seq0').")
+    parser.add_argument("--output_dir", type=str, default="output_batch_1/annotated_output", help="Folder to save the annotated images.")
+
     args = parser.parse_args()
     main(args)

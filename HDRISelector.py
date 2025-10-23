@@ -7,11 +7,10 @@ import logging
 
 class HDRISelector:
     """
-    Una classe avanzata per selezionare HDRI in base a un valore di luminosità continuo [0, 1],
-    sfruttando i metadati EV (Exposure Value) e un sistema di pesi per tag e categorie.
+    An advanced class for selecting HDRIs based on a continuous luminosity value [0, 1],
+    leveraging EV (Exposure Value) metadata and a weighting system for tags and categories.
     """
-    # Mappa dei pesi per tag e categorie. Valori positivi indicano luminosità,
-    # valori negativi indicano oscurità.
+
     LUMINOSITY_WEIGHTS = {
         "sunny": 2.0, "bright": 1.5, "day": 1.0, "clear": 1.0, "sun": 2.0, "midday": 1.5, 
         "blue sky": 1.0, "pure skies": 1.0, "outdoor": 0.5, "field": 0.2, "meadow": 0.2, 
@@ -23,9 +22,9 @@ class HDRISelector:
 
     def __init__(self, source: kb.AssetSource, json_path: str):
         """
-        Inizializza HDRISelector.
-        - source: AssetSource di Kubric, obbligatorio.
-        - json_path: Percorso del JSON di Poly Haven, obbligatorio.
+        Initialize HDRISelector.
+        - source: Kubric AssetSource, required.
+        - json_path: Path to Poly Haven JSON file, required.
         """
         self.source = source
         self.json_path = json_path
@@ -36,13 +35,13 @@ class HDRISelector:
 
     def _process_json_data(self):
         """
-        Elabora il JSON per calcolare un punteggio di luminosità normalizzato per ogni HDRI.
+        Process the JSON to calculate a normalized brightness score for each HDRI.
         """
         try:
             with open(self.json_path, "r") as f:
                 data = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError) as e:
-            logging.error(f"Impossibile leggere o processare il file JSON: {e}")
+            logging.error(f"Unable to read or process the JSON file: {e}")
             return
 
         for hdri_id, meta in data.items():
@@ -58,7 +57,7 @@ class HDRISelector:
         all_scores = [d["raw_score"] for d in self.hdri_data.values()]
         
         if not all_scores:
-            logging.warning("Nessun punteggio calcolato dal file JSON. La normalizzazione non può essere eseguita.")
+            logging.warning("No scores calculated from JSON file. Normalization cannot be performed.")
             return
 
         min_score, max_score = min(all_scores), max(all_scores)
@@ -73,13 +72,13 @@ class HDRISelector:
 
     def pick(self, luminosity: float, k: int = 10, rng: Optional[np.random.RandomState] = None) -> str:
         """
-        Ritorna un HDRI casuale il cui punteggio di luminosità è più vicino a quello richiesto.
-        - luminosity: Valore di luminosità desiderato [0..1].
-        - k: Numero dei migliori candidati tra cui scegliere casualmente.
-        - rng: Generatore di numeri casuali per la riproducibilità. Se None, usa `random`.
+        Returns a random HDRI whose brightness score is closest to the requested one.
+        - luminosity: Desired luminosity value [0..1].
+        - k: Number of top candidates to randomly choose from.
+        - rng: Random number generator for reproducibility. If None, uses `random`.
         """
         if not (0.0 <= luminosity <= 1.0):
-            raise ValueError("La luminosità deve essere compresa tra 0 e 1.")
+            raise ValueError("Luminosity must be between 0 and 1.")
         choice_fn = rng.choice if rng else random.choice
 
         candidates = {
@@ -88,7 +87,7 @@ class HDRISelector:
         }
         
         if not candidates:
-            logging.warning("Nessun HDRI del JSON trovato nell'AssetSource. Scelta casuale tra tutti gli asset disponibili.")
+            logging.warning("No HDRIs from JSON found in AssetSource. Random choice among all available assets.")
             return choice_fn(list(self.available_asset_ids))
 
         sorted_candidates = sorted(
@@ -101,14 +100,13 @@ class HDRISelector:
         if not top_k_candidates_items:
             return choice_fn(list(candidates.keys()))
 
-        # Estrai solo gli ID dei migliori candidati
         top_k_ids = [item[0] for item in top_k_candidates_items]
         return choice_fn(top_k_ids)
 
     def get_all_tags_and_categories(self) -> Tuple[Set[str], Set[str]]:
         """
-        Restituisce due set contenenti tutti i tag e tutte le categorie uniche
-        presenti nel JSON di Poly Haven.
+        Returns two sets containing all unique tags and categories
+        present in the Poly Haven JSON.
         """
         with open(self.json_path, "r") as f:
             data = json.load(f)

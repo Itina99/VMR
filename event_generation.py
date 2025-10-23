@@ -4,7 +4,6 @@ import glob
 import cv2
 import os
 import tqdm
-
 import esim_torch
 import argparse
 

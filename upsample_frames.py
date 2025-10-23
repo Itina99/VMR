@@ -14,8 +14,8 @@ def upsample():
     args = parse_args()
     input_dir = args.input_dir
     output_dir = args.output_dir
-    # Upsample ALL RGB sequences from the simulation
-    logging.info("📈 Avvio upsampling per tutte le sequenze...")
+
+    logging.info("📈 Starting upsampling for all sequences...")
     upsampler = Upsampler(input_dir=input_dir, output_dir=output_dir)
     upsampler.upsample()
 

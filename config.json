@@ -14,8 +14,6 @@
     "max_dynamic_objects": 3,
     "max_static_objects": 3,
     "min_dynamic_objects": 1,
-    "min_static_objects": 1,
-    "spawning_region_static": [[-5, -5, 0], [5, 5, 0]],
-    "spawning_region_dynamic": [[-5, -5, 1], [5, 5, 6]],
-    "velocity_range": [[-4.0, -4.0, 0.0], [4.0, 4.0, 0.0]]
+    "min_static_objects": 1
+
 }
