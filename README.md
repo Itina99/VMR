@@ -1,4 +1,4 @@
-# Kubric Data Generation Pipeline 🚀
+# Kubric RGB & Event Data Generation Pipeline 🚀⚡
 
 This project uses Kubric (via Docker) to generate rich, synthetic datasets. The pipeline is designed to be robust and scalable, generating data in isolated batches.
 
