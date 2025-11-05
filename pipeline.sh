@@ -66,48 +66,85 @@ echo "✅ Conda environment 'vid2e' activated"
 echo ""
 
 # ========== 1. SIMULATION ==========
-echo "🚀 Starting Kubric simulation ($SIMULATION_TYPE) for $OUTPUT_DIR..."
+# echo "🚀 Starting Kubric simulation ($SIMULATION_TYPE) for $OUTPUT_DIR..."
 
-if [ "$SIMULATION_TYPE" = "shapenet" ]; then
-    docker run --rm -it \
-        --user ${USER_ID}:${GROUP_ID} \
-        --volume ${CURRENT_DIR}:/kubric \
-        -e PYTHONPATH=/kubric \
-        kubricdockerhub/kubruntu \
-        /usr/bin/python3 /kubric/generator_shapenet.py \
-            --output_root "$OUTPUT_DIR" \
-            --refresh_item_number $REFRESH_ITEM_NUMBER \
-            --light_levels $LIGHT_LEVELS \
-            --camera_positions $CAMERA_POSITIONS \
-            --standard_mode $STANDARD_GEN \
-            --rand_gen $RAND_GEN \
-            --number_of_random_sequences $NUMBER_OF_RANDOM_SEQUENCES \
-            --camera_mode $CAMERA_MODE \
-            --max_camera_movement $MAX_CAMERA_MOVEMENT \
-            --resolution $RESOLUTION \
-            --frame_end $FRAME_END \
-            --frame_rate $FRAME_RATE \
-            --step_rate $STEP_RATE \
-            --max_dynamic_objects $MAX_DYNAMIC_OBJECTS \
-            --max_static_objects $MAX_STATIC_OBJECTS \
-            --min_dynamic_objects $MIN_DYNAMIC_OBJECTS \
-            --min_static_objects $MIN_STATIC_OBJECTS
-fi
+# if [ "$SIMULATION_TYPE" = "shapenet" ]; then
+#     docker run --rm -it \
+#         --user ${USER_ID}:${GROUP_ID} \
+#         --volume ${CURRENT_DIR}:/kubric \
+#         -e PYTHONPATH=/kubric \
+#         kubricdockerhub/kubruntu \
+#         /usr/bin/python3 /kubric/generator_shapenet.py \
+#             --output_root "$OUTPUT_DIR" \
+#             --refresh_item_number $REFRESH_ITEM_NUMBER \
+#             --light_levels $LIGHT_LEVELS \
+#             --camera_positions $CAMERA_POSITIONS \
+#             --standard_mode $STANDARD_GEN \
+#             --rand_gen $RAND_GEN \
+#             --number_of_random_sequences $NUMBER_OF_RANDOM_SEQUENCES \
+#             --camera_mode $CAMERA_MODE \
+#             --max_camera_movement $MAX_CAMERA_MOVEMENT \
+#             --resolution $RESOLUTION \
+#             --frame_end $FRAME_END \
+#             --frame_rate $FRAME_RATE \
+#             --step_rate $STEP_RATE \
+#             --max_dynamic_objects $MAX_DYNAMIC_OBJECTS \
+#             --max_static_objects $MAX_STATIC_OBJECTS \
+#             --min_dynamic_objects $MIN_DYNAMIC_OBJECTS \
+#             --min_static_objects $MIN_STATIC_OBJECTS
+# fi
 
-# ========== 2. CLEANUP OUTPUT ==========
-if [ -d "$UPSAMPLED_DIR" ]; then
-    echo "🧹 Cleaning up existing directory: $UPSAMPLED_DIR"
-    rm -rf "$UPSAMPLED_DIR"
-fi
+# # ========== 2. CLEANUP OUTPUT ==========
+# if [ -d "$UPSAMPLED_DIR" ]; then
+#     echo "🧹 Cleaning up existing directory: $UPSAMPLED_DIR"
+#     rm -rf "$UPSAMPLED_DIR"
+# fi
 
+conda activate vid2eUps
 # ========== 3. UPSAMPLING AND EVENT GENERATION ==========
 echo "⚡ Generating events and upsampling..."
 python3 upsample_frames.py --input_dir "$RGB_DIR" --output_dir "$UPSAMPLED_DIR"
 
+# conda activate vid2e
+# # Generate event data from upsampled RGB frames
+# echo "✅ Cleanup completed. Generating events..."
+# python3 event_generation.py --input_dir "$UPSAMPLED_DIR" --output_dir "$EVENTS_DIR"
 conda activate vid2e
-# Generate event data from upsampled RGB frames
-echo "✅ Cleanup completed. Generating events..."
-python3 event_generation.py --input_dir "$UPSAMPLED_DIR" --output_dir "$EVENTS_DIR"
+echo "✅ Upsampling completed. Generating events (per-directory loop to avoid OOM)..."
+
+# Ensure the base events directory exists
+mkdir -p "$EVENTS_DIR"
+
+# Loop over each subdirectory in the upsampled directory
+# The trailing slash ensures we only match directories
+for INPUT_SEQ_DIR in "$UPSAMPLED_DIR"/*/; do
+    
+    # Check if it's actually a directory
+    if [ -d "$INPUT_SEQ_DIR" ]; then
+        
+        # Get the subdirectory name (e.g., "seq_0001")
+        SEQ_NAME=$(basename "$INPUT_SEQ_DIR")
+        
+        # Define the specific output .npz file path
+        OUTPUT_NPZ_FILE="$EVENTS_DIR/$SEQ_NAME.npz"
+
+        echo "--- Processing $SEQ_NAME ---"
+
+        # check if output file already exists, skip if it does
+        if [ -f "$OUTPUT_NPZ_FILE" ]; then
+            echo "⚠️  Output file $OUTPUT_NPZ_FILE already exists. Skipping..."
+            continue
+        fi
+        
+        # Call the modified Python script for *this directory only*
+        # The python script now takes --input_dir and --output_file
+        python3 event_generation.py \
+            --input_dir "$INPUT_SEQ_DIR" \
+            --output_file "$OUTPUT_NPZ_FILE"
+    fi
+done
+
+echo "✅ All event generation completed."
 
 # Create GIF animations from NPZ event data for visualization
 echo "🎬 Generating event GIFs..."
